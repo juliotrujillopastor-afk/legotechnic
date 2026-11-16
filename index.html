@@ -1,0 +1,3821 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TechnicForge 3D — Diseñador Paramétrico LEGO Technic Sin Soportes</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js r128 & OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            cad: {
+              bg: '#0b0e14',
+              panel: '#121721',
+              card: '#18202e',
+              border: '#232e42',
+              accent: '#f97316',
+              red: '#ef4444',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: #0b0e14;
+      color: #e2e8f0;
+      font-family: 'Inter', system-ui, sans-serif;
+      overflow-x: hidden;
+    }
+
+    /* Barra de desplazamiento estilo ingeniería CAD */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f141d;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #28354c;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #f97316;
+    }
+
+    /* Deslizadores CAD de precisión */
+    input[type="range"].cad-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      background: #1e293b;
+      border-radius: 9999px;
+      outline: none;
+      border: 1px solid #2d3b52;
+    }
+    input[type="range"].cad-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #f97316;
+      border: 2px solid #fff7ed;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(249, 115, 22, 0.55);
+      transition: transform 0.12s ease, background-color 0.12s ease;
+    }
+    input[type="range"].cad-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+      background: #fb923c;
+    }
+    input[type="range"].cad-slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #f97316;
+      border: 2px solid #fff7ed;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(249, 115, 22, 0.55);
+    }
+
+    /* Fondo cuadriculado tipo plano técnico */
+    .blueprint-bg {
+      background-color: #0d131f;
+      background-image:
+        linear-gradient(to right, rgba(56, 189, 248, 0.06) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(56, 189, 248, 0.06) 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+
+    /* Tooltip accesible CSS */
+    .cad-tooltip-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+    .cad-tooltip-box {
+      visibility: hidden;
+      opacity: 0;
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: 230px;
+      background: #1e293b;
+      color: #f1f5f9;
+      border: 1px solid #38bdf8;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 11px;
+      line-height: 1.4;
+      z-index: 60;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.65);
+      pointer-events: none;
+      transition: opacity 0.15s ease, visibility 0.15s ease;
+    }
+    .cad-tooltip-wrap:hover .cad-tooltip-box,
+    .cad-tooltip-wrap:focus-within .cad-tooltip-box {
+      visibility: visible;
+      opacity: 1;
+    }
+
+    /* Etiquetas HUD flotantes proyectadas desde el espacio 3D */
+    .hud-3d-tag {
+      position: absolute;
+      transform: translate(-50%, -100%);
+      pointer-events: none;
+      white-space: nowrap;
+      will-change: left, top;
+    }
+
+    @keyframes slideUpFade {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .toast-enter {
+      animation: slideUpFade 0.22s ease-out forwards;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col lg:h-screen lg:overflow-hidden selection:bg-orange-500 selection:text-white">
+
+  <!-- ===================================================================== -->
+  <!-- BARRA SUPERIOR DE NAVEGACIÓN, PLANTILLAS Y EXPORTACIÓN .STL           -->
+  <!-- ===================================================================== -->
+  <header class="bg-cad-panel border-b border-cad-border px-3 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-3 z-30 shrink-0">
+    <!-- Logotipo y Título -->
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-lg shadow-orange-500/20 border border-orange-300/30 shrink-0">
+        <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="7" width="20" height="10" rx="5" />
+          <circle cx="7" cy="12" r="2" />
+          <path d="M15 12h4M17 10v4" stroke-linecap="round" />
+        </svg>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-base sm:text-lg font-bold tracking-tight text-white">TechnicForge <span class="text-orange-400">3D</span></h1>
+          <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+            SIN SOPORTES
+          </span>
+        </div>
+        <p class="text-[11px] text-slate-400 hidden sm:block">Diseñador CAD compatible con LEGO® Technic • Paso estándar 8.0 mm (1M)</p>
+      </div>
+    </div>
+
+    <!-- Selector de Plantillas Predefinidas y Botón Descargar .STL -->
+    <div class="flex flex-wrap items-center gap-2 sm:gap-3 flex-1 sm:flex-initial justify-end">
+      <div class="flex items-center gap-2 bg-cad-card border border-cad-border rounded-xl px-2.5 py-1.5 w-full sm:w-auto">
+        <span class="text-[11px] font-medium text-slate-400 whitespace-nowrap flex items-center gap-1">
+          <svg class="w-3.5 h-3.5 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2" />
+            <polyline points="2 17 12 22 22 17" />
+            <polyline points="2 12 12 17 22 12" />
+          </svg>
+          Plantilla:
+        </span>
+        <select id="templateSelect" aria-label="Seleccionar plantilla predefinida" class="bg-transparent text-xs font-medium text-slate-100 focus:outline-none cursor-pointer pr-1 w-full sm:w-64">
+          <option value="l_offset_half" class="bg-slate-900">1) Viga en L con desplazamiento 0.5M (offset)</option>
+          <option value="triangle_345" class="bg-slate-900">2) Triángulo rígido 3-4-5 con cruces (+) en vértices</option>
+          <option value="z_double_45" class="bg-slate-900">3) Viga en Z doble de 45°</option>
+          <option value="star_multi_angle" class="bg-slate-900">4) Estrella / Brazo ramificado multi-ángulo con cruces</option>
+          <option value="thin_angular_39" class="bg-slate-900">5) Viga fina (3.9 mm) angular</option>
+        </select>
+      </div>
+
+      <button id="exportStlBtn" type="button" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-semibold text-xs sm:text-sm text-white bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-400 hover:to-red-500 active:scale-[0.99] shadow-lg shadow-orange-600/25 border border-orange-300/25 transition cursor-pointer">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke-linecap="round" stroke-linejoin="round" />
+          <polyline points="7 10 12 15 17 10" stroke-linecap="round" stroke-linejoin="round" />
+          <line x1="12" y1="15" x2="12" y2="3" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span>Descargar archivo .STL</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- ÁREA DE TRABAJO PRINCIPAL: PANEL IZQUIERDO + VISOR 3D DERECHO         -->
+  <!-- ===================================================================== -->
+  <main class="flex-1 flex flex-col lg:flex-row lg:overflow-hidden">
+
+    <!-- =================================================================== -->
+    <!-- PANEL IZQUIERDO: PESTAÑAS DE MODO, LISTA DE CUBOS Y CALIBRACIÓN     -->
+    <!-- =================================================================== -->
+    <aside class="w-full lg:w-[450px] xl:w-[480px] bg-cad-panel border-b lg:border-b-0 lg:border-r border-cad-border flex flex-col lg:h-full lg:overflow-y-auto shrink-0">
+
+      <!-- Navegación de Pestañas (Modo 1: Editor 3D Cubos activo por defecto) -->
+      <div class="p-3 border-b border-cad-border bg-cad-bg/60 sticky top-0 z-20 backdrop-blur-md">
+        <div class="grid grid-cols-3 gap-1 bg-cad-card p-1 rounded-xl border border-cad-border">
+          <button id="tabCubesBtn" type="button" class="flex items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer bg-orange-500 text-white shadow">
+            <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+              <line x1="12" y1="22.08" x2="12" y2="12" />
+            </svg>
+            <span>Editor 3D (Cubos)</span>
+          </button>
+          <button id="tabBeamBtn" type="button" class="flex items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer text-slate-400 hover:text-white">
+            <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <circle cx="5" cy="18" r="2.5" />
+              <circle cx="12" cy="7" r="2.5" />
+              <circle cx="19" cy="14" r="2.5" />
+              <path d="M6.8 16L10.3 9.2M13.9 8.8l3.4 3.4" />
+            </svg>
+            <span>Viga Multi-Segmento</span>
+          </button>
+          <button id="tabGridBtn" type="button" class="flex items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer text-slate-400 hover:text-white">
+            <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <rect x="3" y="3" width="18" height="18" rx="3" />
+              <path d="M9 3v18M15 3v18M3 9h18M3 15h18" />
+            </svg>
+            <span>Matriz / Marco</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- MODO 1 (POR DEFECTO): EDITOR 3D DIRECTO DE CUBOS                  -->
+      <!-- ================================================================= -->
+      <section id="cubesModeSection" class="p-3.5 space-y-3.5">
+        <!-- Tarjeta del Punto de Inclusión Activo y Controles de Paso/Snap -->
+        <div class="bg-cad-card border border-cad-border rounded-xl p-3 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2 bg-cyan-950/60 border border-cyan-500/50 rounded-xl px-2.5 py-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping"></span>
+              <span class="text-[11px] text-slate-300">Punto de Inclusión:</span>
+              <span id="activeAnchorBadge" class="font-mono text-xs font-bold text-cyan-300">⚓ C1</span>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <button id="undoCubesBtn" type="button" title="Deshacer última acción (Ctrl+Z)" class="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer">
+                ↶ Deshacer
+              </button>
+              <button id="clearCubesBtn" type="button" title="Reiniciar a 1 cubo base" class="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-rose-950/60 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 transition cursor-pointer">
+                Reiniciar
+              </button>
+            </div>
+          </div>
+
+          <p class="text-[11px] text-slate-400 leading-relaxed bg-slate-950/70 border border-slate-800/90 rounded-lg p-2">
+            <span class="text-orange-400 font-semibold">• Clic izq. en cama 3D:</span> añade cubo midiendo ángulo respecto al Punto de Inclusión.<br />
+            <span class="text-sky-400 font-semibold">• Clic izq. en cubo 3D:</span> cambia <span class="text-sky-300 font-mono">Pin (O)</span> → <span class="text-amber-300 font-mono">Cruz (+)</span> → <span class="text-slate-200 font-mono">Sólido (●)</span>.<br />
+            <span class="text-amber-300 font-semibold">• Clic der. en ventana 3D:</span> pausa edición para rotar libremente (clic izq. en pieza reactiva).
+          </p>
+
+          <!-- Controles de Paso Modular y Ajuste Angular sincronizados con la barra 3D -->
+          <div class="grid grid-cols-2 gap-2">
+            <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-2">
+              <label for="sidebarDistStepSelect" class="block text-[10px] text-slate-400 mb-1">Distancia de paso:</label>
+              <select id="sidebarDistStepSelect" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 font-mono text-[11px] text-cyan-300 focus:outline-none cursor-pointer">
+                <option value="0.5">0.5M (4.0 mm)</option>
+                <option value="1" selected>1.0M (8.0 mm)</option>
+                <option value="1.5">1.5M (12.0 mm)</option>
+                <option value="2">2.0M (16.0 mm)</option>
+              </select>
+            </div>
+            <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-2">
+              <label for="sidebarAngleSnapSelect" class="block text-[10px] text-slate-400 mb-1">Ajuste angular (Snap):</label>
+              <select id="sidebarAngleSnapSelect" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 font-mono text-[11px] text-orange-400 focus:outline-none cursor-pointer">
+                <option value="15" selected>15°</option>
+                <option value="22.5">22.5°</option>
+                <option value="45">45°</option>
+                <option value="1">Libre (1°)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Botones rápidos de inserción desde el Punto de Inclusión activo -->
+          <div class="grid grid-cols-4 gap-1.5">
+            <button type="button" data-quick-add-angle="0" class="quick-add-cube-btn py-1.5 px-1 rounded-lg text-[10px] font-mono font-semibold bg-slate-900 hover:bg-orange-500/20 text-slate-200 hover:text-orange-300 border border-slate-700 hover:border-orange-500/50 transition cursor-pointer">+ Cubo 0°</button>
+            <button type="button" data-quick-add-angle="45" class="quick-add-cube-btn py-1.5 px-1 rounded-lg text-[10px] font-mono font-semibold bg-slate-900 hover:bg-orange-500/20 text-slate-200 hover:text-orange-300 border border-slate-700 hover:border-orange-500/50 transition cursor-pointer">+ Cubo +45°</button>
+            <button type="button" data-quick-add-angle="90" class="quick-add-cube-btn py-1.5 px-1 rounded-lg text-[10px] font-mono font-semibold bg-slate-900 hover:bg-orange-500/20 text-slate-200 hover:text-orange-300 border border-slate-700 hover:border-orange-500/50 transition cursor-pointer">+ Cubo +90°</button>
+            <button type="button" data-quick-add-angle="-45" class="quick-add-cube-btn py-1.5 px-1 rounded-lg text-[10px] font-mono font-semibold bg-slate-900 hover:bg-orange-500/20 text-slate-200 hover:text-orange-300 border border-slate-700 hover:border-orange-500/50 transition cursor-pointer">+ Cubo -45°</button>
+          </div>
+        </div>
+
+        <!-- Lista Interactiva Sincronizada de Todos los Cubos Colocados -->
+        <div class="bg-cad-card border border-cad-border rounded-xl p-3 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-semibold text-white flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-orange-400"></span>
+              Cubos Colocados y Ángulos de Inclusión
+            </h3>
+            <span id="cubesCountBadge" class="font-mono text-[11px] text-slate-400">1 cubo</span>
+          </div>
+
+          <div id="cubesListContainer" class="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+            <!-- Tarjetas generadas dinámicamente por JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- MODO 2: VIGA MULTI-SEGMENTO (EDITOR 2D SVG + SEGMENTOS)           -->
+      <!-- ================================================================= -->
+      <section id="beamModeSection" class="p-3.5 space-y-4 hidden">
+        <div class="bg-cad-card border border-cad-border rounded-xl p-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div>
+              <h2 class="text-xs font-semibold text-white flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+                Esquema 2D Interactivo de Agujeros
+              </h2>
+              <p class="text-[11px] text-slate-400">Haz clic en cualquier nodo: <span class="text-sky-400 font-semibold">Pin (O)</span> → <span class="text-amber-400 font-semibold">Cruz (+)</span> → <span class="text-slate-300 font-semibold">Sólido (●)</span></p>
+            </div>
+            <div class="flex items-center gap-1">
+              <button id="btnAllPins" type="button" class="px-2 py-1 text-[10px] font-semibold rounded-lg bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/25 transition cursor-pointer">Todos O</button>
+              <button id="btnEndsAxles" type="button" class="px-2 py-1 text-[10px] font-semibold rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition cursor-pointer">Extremos +</button>
+            </div>
+          </div>
+
+          <div class="relative rounded-xl border border-slate-700/80 blueprint-bg overflow-hidden">
+            <svg id="beamSvgEditor" class="w-full h-52 block select-none cursor-crosshair" viewBox="-50 -40 100 80"></svg>
+            <div class="absolute bottom-1.5 left-2 right-2 flex items-center justify-between text-[10px] text-slate-400 pointer-events-none bg-slate-950/75 backdrop-blur-sm px-2 py-1 rounded-lg border border-slate-800">
+              <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full border-2 border-sky-400"></span> Pin (O)</span>
+              <span class="flex items-center gap-1"><span class="text-amber-400 font-bold leading-none">+</span> Cruz (+)</span>
+              <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-slate-500"></span> Sólido (●)</span>
+              <span id="beamHoleCountBadge" class="font-mono text-slate-300">0 nodos</span>
+            </div>
+          </div>
+
+          <div class="mt-2.5 grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
+            <label class="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none">
+              <input id="halfStepHolesToggle" type="checkbox" class="rounded accent-orange-500 w-3.5 h-3.5 cursor-pointer" />
+              <span>Agujeros cada 0.5M (4mm)</span>
+            </label>
+            <div class="flex items-center justify-end gap-1.5">
+              <span class="text-[11px] text-slate-400">Grosor brazo:</span>
+              <select id="armWidthPreset" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5 text-[11px] text-slate-200 focus:outline-none">
+                <option value="7.8">Estándar (7.8mm)</option>
+                <option value="8.8">Reforzado (8.8mm)</option>
+                <option value="6.8">Compacto (6.8mm)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-cad-card border border-cad-border rounded-xl p-3 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-semibold text-white flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-orange-400"></span>
+              Segmentos de la Viga
+            </h3>
+            <div class="flex items-center gap-1.5">
+              <button id="addBranchSegmentBtn" type="button" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 transition cursor-pointer">
+                + Ramificar
+              </button>
+              <button id="addSegmentBtn" type="button" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-orange-500 hover:bg-orange-400 text-white shadow transition cursor-pointer">
+                + Segmento
+              </button>
+            </div>
+          </div>
+
+          <div id="segmentsListContainer" class="space-y-2.5 max-h-[340px] overflow-y-auto pr-1"></div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- MODO 3: MATRIZ / MARCO CUSTOM                                     -->
+      <!-- ================================================================= -->
+      <section id="gridModeSection" class="p-3.5 space-y-4 hidden">
+        <div class="bg-cad-card border border-cad-border rounded-xl p-3 space-y-3">
+          <div>
+            <h2 class="text-xs font-semibold text-white flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-orange-400"></span>
+              Editor de Matriz / Marco Technic
+            </h2>
+            <p class="text-[11px] text-slate-400">Haz clic o arrastra sobre la cuadrícula para esculpir el marco.</p>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <div class="bg-slate-900/80 border border-slate-800 rounded-lg p-2">
+              <label class="block text-[10px] text-slate-400 mb-1">Columnas (X)</label>
+              <div class="flex items-center justify-between gap-1">
+                <button id="gridColsDec" type="button" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold cursor-pointer">-</button>
+                <span id="gridColsVal" class="font-mono text-xs font-semibold text-white">5</span>
+                <button id="gridColsInc" type="button" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold cursor-pointer">+</button>
+              </div>
+            </div>
+            <div class="bg-slate-900/80 border border-slate-800 rounded-lg p-2">
+              <label class="block text-[10px] text-slate-400 mb-1">Filas (Y)</label>
+              <div class="flex items-center justify-between gap-1">
+                <button id="gridRowsDec" type="button" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold cursor-pointer">-</button>
+                <span id="gridRowsVal" class="font-mono text-xs font-semibold text-white">5</span>
+                <button id="gridRowsInc" type="button" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold cursor-pointer">+</button>
+              </div>
+            </div>
+            <div class="bg-slate-900/80 border border-slate-800 rounded-lg p-2">
+              <label class="block text-[10px] text-slate-400 mb-1">Paso celda</label>
+              <select id="gridStepSelect" class="w-full bg-slate-800 border border-slate-700 rounded px-1.5 py-1 text-[11px] font-mono text-white focus:outline-none">
+                <option value="1">1M (8mm)</option>
+                <option value="0.5">0.5M (4mm)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <span class="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Herramienta de Pintado</span>
+            <div class="grid grid-cols-4 gap-1.5" id="gridBrushButtons">
+              <button type="button" data-brush="empty" class="brush-btn py-1.5 px-2 rounded-lg text-[11px] font-medium border border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500 flex flex-col items-center gap-0.5 cursor-pointer">
+                <span class="w-3.5 h-3.5 rounded border border-dashed border-slate-500 inline-block"></span>
+                <span>Vacío</span>
+              </button>
+              <button type="button" data-brush="solid" class="brush-btn py-1.5 px-2 rounded-lg text-[11px] font-medium border border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500 flex flex-col items-center gap-0.5 cursor-pointer">
+                <span class="w-3.5 h-3.5 rounded bg-slate-500 inline-block"></span>
+                <span>Sólido</span>
+              </button>
+              <button type="button" data-brush="pin" class="brush-btn py-1.5 px-2 rounded-lg text-[11px] font-semibold border-2 border-orange-500 bg-orange-500/15 text-white flex flex-col items-center gap-0.5 cursor-pointer">
+                <span class="w-3.5 h-3.5 rounded-full border-2 border-sky-400 inline-block"></span>
+                <span>Pin (O)</span>
+              </button>
+              <button type="button" data-brush="axle" class="brush-btn py-1.5 px-2 rounded-lg text-[11px] font-medium border border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500 flex flex-col items-center gap-0.5 cursor-pointer">
+                <span class="text-amber-400 font-bold text-xs leading-3">+</span>
+                <span>Cruz (+)</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-700/80 blueprint-bg p-3 flex items-center justify-center overflow-auto">
+            <div id="matrixGridContainer" class="inline-grid gap-1 select-none touch-none"></div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1">
+            <button id="gridPresetFrameBtn" type="button" class="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer">Solo Borde (Marco)</button>
+            <button id="gridPresetFillBtn" type="button" class="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer">Placa Llena (O)</button>
+            <button id="gridPresetClearBtn" type="button" class="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-rose-950/60 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 cursor-pointer">Vaciar Todo</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- CALIBRACIÓN DE IMPRESORA 3D Y TOLERANCIAS LEGO TECHNIC            -->
+      <!-- ================================================================= -->
+      <section class="p-3.5 pt-0 space-y-3">
+        <div class="bg-cad-card border border-cad-border rounded-xl p-3 space-y-3.5">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+            <h3 class="text-xs font-semibold text-white flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 20h9" stroke-linecap="round" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+              Calibración Impresora 3D y Medidas
+            </h3>
+            <button id="resetCalibrationBtn" type="button" class="text-[10px] text-slate-400 hover:text-orange-400 underline cursor-pointer">Restaurar PLA/PETG</button>
+          </div>
+
+          <!-- Altura Z -->
+          <div>
+            <div class="flex items-center justify-between text-[11px] mb-1">
+              <span class="text-slate-300 font-medium flex items-center gap-1">
+                Altura / Grosor en Z (sobre cama):
+                <span class="cad-tooltip-wrap">
+                  <span class="w-3.5 h-3.5 rounded-full bg-slate-700 text-slate-300 text-[9px] inline-flex items-center justify-center cursor-help">?</span>
+                  <span class="cad-tooltip-box">La viga LEGO Technic estándar mide 7.8 mm de alto (1M). Las vigas finas (half-beams) miden 3.9 mm (0.5M).</span>
+                </span>
+              </span>
+              <span id="thicknessValLabel" class="font-mono font-semibold text-orange-400">7.80 mm</span>
+            </div>
+            <input id="thicknessSlider" type="range" min="2.4" max="15.6" step="0.1" value="7.8" class="cad-slider" />
+            <div class="flex items-center gap-1.5 mt-1.5">
+              <button type="button" data-thickness="7.8" class="thick-preset-btn flex-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-slate-200 border border-slate-700 cursor-pointer">Estándar 7.8mm (1M)</button>
+              <button type="button" data-thickness="3.9" class="thick-preset-btn flex-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-slate-200 border border-slate-700 cursor-pointer">Fina 3.9mm (0.5M)</button>
+            </div>
+          </div>
+
+          <!-- Holgura agujeros Pin (O) -->
+          <div>
+            <div class="flex items-center justify-between text-[11px] mb-1">
+              <span class="text-slate-300 font-medium flex items-center gap-1">
+                Holgura agujeros Pin (O):
+                <span class="cad-tooltip-wrap">
+                  <span class="w-3.5 h-3.5 rounded-full bg-slate-700 text-slate-300 text-[9px] inline-flex items-center justify-center cursor-help">?</span>
+                  <span class="cad-tooltip-box">Base 4.80 mm + holgura (por defecto +0.15 mm = Ø 4.95 mm) para compensar la expansión horizontal FDM.</span>
+                </span>
+              </span>
+              <span id="pinClearanceLabel" class="font-mono font-semibold text-sky-400">+0.15 mm (Ø 4.95)</span>
+            </div>
+            <input id="pinClearanceSlider" type="range" min="-0.20" max="0.40" step="0.01" value="0.15" class="cad-slider" />
+          </div>
+
+          <!-- Holgura agujeros Cruz Eje (+) -->
+          <div>
+            <div class="flex items-center justify-between text-[11px] mb-1">
+              <span class="text-slate-300 font-medium flex items-center gap-1">
+                Holgura agujeros Cruz Eje (+):
+                <span class="cad-tooltip-wrap">
+                  <span class="w-3.5 h-3.5 rounded-full bg-slate-700 text-slate-300 text-[9px] inline-flex items-center justify-center cursor-help">?</span>
+                  <span class="cad-tooltip-box">Ajusta diámetro exterior (4.85 mm) y ranura de cruz (1.85 mm) para encaje firme en ejes Technic.</span>
+                </span>
+              </span>
+              <span id="axleClearanceLabel" class="font-mono font-semibold text-amber-400">+0.15 mm (5.00/2.00)</span>
+            </div>
+            <input id="axleClearanceSlider" type="range" min="-0.20" max="0.40" step="0.01" value="0.15" class="cad-slider" />
+          </div>
+
+          <!-- Chaflán Anti-Pie de Elefante -->
+          <div>
+            <div class="flex items-center justify-between text-[11px] mb-1">
+              <span class="text-slate-300 font-medium flex items-center gap-1">
+                Chaflán anti-pie de elefante (Z=0):
+                <span class="cad-tooltip-wrap">
+                  <span class="w-3.5 h-3.5 rounded-full bg-slate-700 text-slate-300 text-[9px] inline-flex items-center justify-center cursor-help">?</span>
+                  <span class="cad-tooltip-box">Bisel exterior de 45° en la base Z=0 para neutralizar el aplastamiento de la primera capa.</span>
+                </span>
+              </span>
+              <span id="elephantChamferLabel" class="font-mono font-semibold text-emerald-400">0.35 mm</span>
+            </div>
+            <input id="elephantChamferSlider" type="range" min="0.00" max="0.80" step="0.05" value="0.35" class="cad-slider" />
+          </div>
+
+          <!-- Avellanado inferior sin soportes -->
+          <div>
+            <label class="block text-[11px] text-slate-300 font-medium mb-1.5 flex items-center gap-1">
+              Avellanado inferior en cama (Z=0):
+              <span class="cad-tooltip-wrap">
+                <span class="w-3.5 h-3.5 rounded-full bg-slate-700 text-slate-300 text-[9px] inline-flex items-center justify-center cursor-help">?</span>
+                <span class="cad-tooltip-box">El chaflán cónico de 45° en Z=0 aloja la cabeza del pin sin generar ningún voladizo horizontal.</span>
+              </span>
+            </label>
+            <div class="grid grid-cols-2 gap-1.5">
+              <button id="bottomChamfer45Btn" type="button" class="py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-pointer">
+                Chaflán 45° sin soportes
+              </button>
+              <button id="bottomFlatBtn" type="button" class="py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-900 text-slate-400 border border-slate-700 hover:text-slate-200 cursor-pointer">
+                Plano liso (Z=0)
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- =================================================================== -->
+    <!-- VISOR 3D INTERACTIVO (THREE.JS + CAMA Z=0 + HERRAMIENTAS DIRECTAS)  -->
+    <!-- =================================================================== -->
+    <section id="viewportContainer" class="relative flex-1 bg-[#080b10] h-[56vh] min-h-[420px] lg:h-full overflow-hidden">
+      <!-- Contenedor Canvas Three.js -->
+      <div id="threeCanvasMount" class="w-full h-full"></div>
+
+      <!-- Capa de Etiquetas y Tooltips Flotantes Proyectados desde 3D -->
+      <div id="viewportLabelsOverlay" class="absolute inset-0 pointer-events-none overflow-hidden z-10"></div>
+
+      <!-- HUD Superior Izquierdo: Estado Sin Soportes y Métricas Físicas -->
+      <div class="absolute top-3 left-3 z-20 max-w-[calc(100%-24px)] sm:max-w-xs pointer-events-none">
+        <div class="bg-slate-950/85 backdrop-blur-md border border-emerald-500/40 rounded-xl p-2.5 shadow-xl">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+            <span class="text-xs font-bold text-emerald-400 tracking-wide">Apto 100% Sin Soportes</span>
+          </div>
+          <div class="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono text-slate-300">
+            <div>Área cama: <span id="bedAreaVal" class="text-white font-semibold">0 mm²</span></div>
+            <div>Voladizo máx: <span id="overhangVal" class="text-emerald-300 font-semibold">45° (OK)</span></div>
+            <div>Volumen PLA: <span id="volumeVal" class="text-slate-200">0.00 cm³</span></div>
+            <div>Peso est.: <span id="weightVal" class="text-slate-200">0.0 g</span></div>
+          </div>
+        </div>
+        <!-- Indicador de Edición 3D Pausada (Solo rotación) -->
+        <div id="editPausedBanner" class="hidden mt-2 bg-amber-950/90 backdrop-blur-md border border-amber-400/70 rounded-xl px-3 py-2 shadow-xl flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+          <span class="text-[11px] font-medium text-amber-200 leading-snug">
+            Edición 3D pausada (Solo rotación) — Haz clic izquierdo sobre la pieza para volver a editar
+          </span>
+        </div>
+      </div>
+
+      <!-- HUD Superior Derecho: Vistas de Cámara, Malla, Rayos X y Color Filamento -->
+      <div class="absolute top-3 right-3 z-20 flex flex-col items-end gap-2">
+        <div class="bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-xl p-1 flex flex-wrap items-center gap-1 shadow-xl">
+          <button type="button" data-cam="iso" class="cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-orange-500 text-white cursor-pointer">Isométrica</button>
+          <button type="button" data-cam="top" class="cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-slate-300 hover:bg-slate-800 cursor-pointer">Superior</button>
+          <button type="button" data-cam="bottom" title="Inspeccionar cara inferior Z=0 y chaflanes sin soportes" class="cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-slate-300 hover:bg-slate-800 cursor-pointer">Inferior Z=0</button>
+          <button type="button" data-cam="front" class="cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-slate-300 hover:bg-slate-800 cursor-pointer">Frontal</button>
+        </div>
+
+        <div class="bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-xl p-1.5 flex flex-wrap items-center gap-2 shadow-xl">
+          <button id="toggleWireframeBtn" type="button" class="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-900 text-slate-300 border border-slate-700 hover:border-slate-500 transition cursor-pointer">
+            Malla
+          </button>
+          <button id="toggleXrayBtn" type="button" class="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-900 text-slate-300 border border-slate-700 hover:border-slate-500 transition cursor-pointer">
+            Rayos X
+          </button>
+          <div class="h-4 w-[1px] bg-slate-800"></div>
+          <div id="filamentSwatches" class="flex items-center gap-1.5 pr-1" title="Color de filamento LEGO Technic">
+            <button type="button" data-color="#D9232E" title="Rojo Technic" class="swatch-btn w-5 h-5 rounded-full border-2 border-white shadow cursor-pointer" style="background-color:#D9232E;"></button>
+            <button type="button" data-color="#9EA3A8" title="Gris Claro" class="swatch-btn w-5 h-5 rounded-full border border-slate-600 cursor-pointer" style="background-color:#9EA3A8;"></button>
+            <button type="button" data-color="#4A4E54" title="Gris Oscuro" class="swatch-btn w-5 h-5 rounded-full border border-slate-600 cursor-pointer" style="background-color:#4A4E54;"></button>
+            <button type="button" data-color="#F5CD2F" title="Amarillo Technic" class="swatch-btn w-5 h-5 rounded-full border border-slate-600 cursor-pointer" style="background-color:#F5CD2F;"></button>
+            <button type="button" data-color="#1E2024" title="Negro" class="swatch-btn w-5 h-5 rounded-full border border-slate-500 cursor-pointer" style="background-color:#1E2024;"></button>
+            <button type="button" data-color="#0057A8" title="Azul Technic" class="swatch-btn w-5 h-5 rounded-full border border-slate-600 cursor-pointer" style="background-color:#0057A8;"></button>
+            <button type="button" data-color="#F46B1E" title="Naranja Technic" class="swatch-btn w-5 h-5 rounded-full border border-slate-600 cursor-pointer" style="background-color:#F46B1E;"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- HUD Inferior Apilado (Barra Flotante de Herramientas 3D + Regla Dimensional) -->
+      <div class="absolute bottom-3 left-3 right-3 z-20 flex flex-col gap-2 pointer-events-none">
+
+        <!-- Barra de Herramientas Flotante del Editor 3D Directo -->
+        <div id="editor3dToolbar" class="flex justify-center">
+          <div class="pointer-events-auto bg-slate-950/92 backdrop-blur-md border border-slate-700/90 rounded-2xl p-1.5 shadow-2xl flex flex-wrap items-center justify-center gap-1.5 text-[11px]">
+            <!-- Herramienta Rápida -->
+            <div class="flex items-center gap-1 bg-slate-900 p-0.5 rounded-xl border border-slate-800">
+              <button type="button" data-tool3d="smart" class="tool3d-btn px-2 py-1 rounded-lg font-semibold bg-orange-500 text-white shadow transition cursor-pointer" title="Clic en cama añade cubo • Clic en cubo cambia O ↔ + ↔ ●">
+                ✦ Inteligente
+              </button>
+              <button type="button" data-tool3d="toggleHole" class="tool3d-btn px-2 py-1 rounded-lg font-medium text-slate-300 hover:text-white transition cursor-pointer" title="Solo cambiar perforación O ↔ + ↔ ● en cubos existentes">
+                ⟳ Cambiar O↔+
+              </button>
+              <button type="button" data-tool3d="anchor" class="tool3d-btn px-2 py-1 rounded-lg font-medium text-slate-300 hover:text-white transition cursor-pointer" title="Fijar Punto de Inclusión activo al hacer clic en un cubo">
+                ⚓ Punto Inclusión
+              </button>
+              <button type="button" data-tool3d="delete" class="tool3d-btn px-2 py-1 rounded-lg font-medium text-slate-300 hover:text-rose-300 transition cursor-pointer" title="Eliminar cubo al hacer clic sobre él">
+                ✕ Eliminar
+              </button>
+            </div>
+
+            <!-- Selector de Tipo de Hueco para Nuevos Cubos -->
+            <div class="flex items-center gap-1 bg-slate-900 p-0.5 rounded-xl border border-slate-800" title="Tipo de perforación al añadir nuevos cubos">
+              <span class="text-[10px] text-slate-400 pl-1.5 hidden md:inline">Nuevo:</span>
+              <button type="button" data-insert-hole="pin" class="ins-hole-btn px-2 py-1 rounded-lg font-semibold bg-sky-500/25 text-sky-300 border border-sky-500/40 cursor-pointer">
+                Pin (O)
+              </button>
+              <button type="button" data-insert-hole="axle" class="ins-hole-btn px-2 py-1 rounded-lg font-medium text-slate-400 hover:text-white cursor-pointer">
+                Cruz (+)
+              </button>
+              <button type="button" data-insert-hole="solid" class="ins-hole-btn px-2 py-1 rounded-lg font-medium text-slate-400 hover:text-white cursor-pointer">
+                Sólido (●)
+              </button>
+            </div>
+
+            <!-- Distancia de Paso y Ajuste Angular -->
+            <div class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded-xl border border-slate-800">
+              <label class="flex items-center gap-1 text-slate-400">
+                <span>Paso:</span>
+                <select id="distSnapSelect" class="bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 font-mono text-[11px] text-cyan-300 focus:outline-none cursor-pointer">
+                  <option value="0.5">0.5M (4mm)</option>
+                  <option value="1" selected>1.0M (8mm)</option>
+                  <option value="1.5">1.5M (12mm)</option>
+                  <option value="2">2.0M (16mm)</option>
+                </select>
+              </label>
+              <label class="flex items-center gap-1 text-slate-400">
+                <span>Snap ∠:</span>
+                <select id="angleSnapSelect" class="bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 font-mono text-[11px] text-orange-400 focus:outline-none cursor-pointer">
+                  <option value="15" selected>15°</option>
+                  <option value="22.5">22.5°</option>
+                  <option value="45">45°</option>
+                  <option value="1">Libre (1°)</option>
+                </select>
+              </label>
+            </div>
+
+            <!-- Acciones Rápidas: Deshacer, Reiniciar y Etiquetas 3D -->
+            <div class="flex items-center gap-1">
+              <button id="toolbarUndoBtn" type="button" title="Deshacer (Ctrl+Z)" class="px-2 py-1 rounded-xl font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer">
+                ↶ Deshacer
+              </button>
+              <button id="toolbarResetBtn" type="button" title="Reiniciar a 1 cubo base" class="px-2 py-1 rounded-xl font-semibold bg-rose-950/70 hover:bg-rose-900/70 text-rose-300 border border-rose-800/50 transition cursor-pointer">
+                Reiniciar
+              </button>
+              <button id="toggle3dLabelsBtn" type="button" class="px-2.5 py-1 rounded-xl font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 transition cursor-pointer" title="Activar/desactivar etiquetas angulares flotantes sobre los cubos">
+                ∠ Etiquetas 3D: ON
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Barra Dimensional Inferior -->
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-xl px-3 py-2 shadow-xl flex flex-wrap items-center gap-3 text-xs">
+            <div class="flex items-center gap-1.5">
+              <span class="text-slate-400">Dimensiones:</span>
+              <span id="dimMmLabel" class="font-mono font-semibold text-white">0.0 × 0.0 × 7.8 mm</span>
+            </div>
+            <span class="text-slate-700">|</span>
+            <div class="flex items-center gap-1.5">
+              <span class="text-slate-400">Módulos (1M=8mm):</span>
+              <span id="dimModLabel" class="font-mono font-semibold text-orange-400">0.0M × 0.0M × 1.0M</span>
+            </div>
+          </div>
+
+          <div class="bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-xl px-3 py-2 shadow-xl flex items-center gap-3 text-[11px] font-mono text-slate-400">
+            <span id="holeSummaryLabel">0 Pines • 0 Cruces</span>
+            <span class="text-slate-700">|</span>
+            <span id="meshStatsLabel">0 triángulos STL</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Contenedor de Notificaciones Toast (Sin alert() ni confirm()) -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- ===================================================================== -->
+  <!-- MOTOR DE GEOMETRÍA CAD, EDITOR 3D DIRECTO Y EXPORTADOR STL BINARIO    -->
+  <!-- ===================================================================== -->
+  <script>
+    /**
+     * TechnicForge 3D — Diseñador Paramétrico LEGO Technic Sin Soportes
+     * ------------------------------------------------------------------
+     * 1. Coordenadas fijas en mundo (Z = 0 cama de impresión; cubo raíz C1 en (0,0)).
+     * 2. Editor 3D Directo de Cubos (Modo 1 activo por defecto):
+     *    - Transportador angular graduado centrado en el Punto de Inclusión activo,
+     *      alineado con la dirección de entrada del punto de inclusión.
+     *    - Cubo fantasma 3D (7.8 × 7.8 × H mm) con brazo continuo y vista previa de hueco.
+     *    - Cambio directo de Pin (O) ↔ Cruz (+) ↔ Sólido (●) con clic izquierdo sobre
+     *      cualquier cubo en 3D.
+     *    - Clic derecho en la ventana 3D pausa la edición dejando solo la pieza 3D
+     *      libre para rotar, y clic izquierdo sobre cualquier elemento de la pieza
+     *      reactiva la edición en ese punto.
+     * 3. Extractor SDF 2D mediante Marching Squares con claves topológicas enteras por arista,
+     *    decimación de micro-aristas (< 0.18 mm), proyección analítica de Newton-Raphson y
+     *    triangulación Earcut (THREE.ShapeUtils.triangulateShape).
+     * 4. Exportación a archivo .STL binario manifold 100% sin soportes.
+     */
+
+    (function () {
+      'use strict';
+
+      // =========================================================================
+      // CONSTANTES DE INGENIERÍA LEGO TECHNIC (EN MILÍMETROS)
+      // =========================================================================
+      const LEGO = {
+        PITCH_1M: 8.0,            // Paso estándar entre centros (1M = 8.0 mm)
+        PITCH_HALF: 4.0,          // Medio paso (0.5M = 4.0 mm)
+        BEAM_WIDTH: 7.8,          // Ancho cubo/viga estándar LEGO Technic
+        BEAM_HEIGHT: 7.8,         // Alto estándar (1M = 7.8 mm)
+        HALF_BEAM_HEIGHT: 3.9,    // Alto viga fina (0.5M = 3.9 mm)
+        CORNER_RADIUS: 1.5,       // Radio de esquina redondeada en cubos
+        PIN_BASE_DIA: 4.80,       // Base agujero Pin (4.80 mm + holgura)
+        COUNTERBORE_DIA: 6.15,    // Diámetro rebaje/avellanado cabeza de pin
+        COUNTERBORE_DEPTH: 0.85,  // Profundidad rebaje estándar
+        AXLE_OUTER_DIA: 4.85,     // Diámetro exterior cruz de eje
+        AXLE_SLOT_WIDTH: 1.85,    // Ancho de ranura cruz de eje
+      };
+
+      // =========================================================================
+      // ESTADO CENTRALIZADO DE LA APLICACIÓN
+      // =========================================================================
+      const appState = {
+        mode: 'cubes', // 'cubes' (por defecto) | 'beam' | 'grid'
+        templateKey: 'l_offset_half',
+        partName: 'Viga_L_Offset_05M',
+
+        // Parámetros globales de impresión 3D
+        thickness: 7.8,
+        pinClearance: 0.15,
+        axleClearance: 0.15,
+        elephantChamfer: 0.35,
+        bottomType: 'chamfer45', // 'chamfer45' | 'flat'
+        filamentColor: '#D9232E',
+        wireframe: false,
+        xray: false,
+
+        // Modo 1 (Por defecto): Editor 3D Directo de Cubos
+        cubes: {
+          items: [],
+          activeAnchorId: 1,
+          is3DEditingActive: true,
+          tool: 'smart',           // 'smart' | 'toggleHole' | 'anchor' | 'delete'
+          insertHoleType: 'pin',   // 'pin' | 'axle' | 'solid'
+          distSnapM: 1.0,          // 0.5 | 1.0 | 1.5 | 2.0
+          angleSnapDeg: 15,        // 15 | 22.5 | 45 | 1
+          show3dLabels: true,
+          hoveredCubeId: null,
+          ghost: {
+            visible: false,
+            x: 0,
+            y: 0,
+            relAngleDeg: 0,
+            absAngleDeg: 0,
+            distanceM: 1.0,
+          },
+          history: [],
+        },
+
+        // Modo 2: Viga Multi-Segmento
+        beam: {
+          armWidth: 7.8,
+          halfStepHoles: false,
+          segments: [
+            { id: 1, fromNode: 0, lengthM: 4.0, angleDeg: 0 },
+            { id: 2, fromNode: 1, lengthM: 3.0, angleDeg: 90 },
+            { id: 3, fromNode: 2, lengthM: 1.5, angleDeg: -90 },
+          ],
+          holeTypes: {},
+        },
+
+        // Modo 3: Matriz / Marco Custom
+        grid: {
+          cols: 5,
+          rows: 5,
+          stepM: 1.0,
+          brush: 'pin',
+          cells: [],
+        },
+
+        // Métricas físicas calculadas
+        metrics: {
+          bedAreaMm2: 0,
+          volumeCm3: 0,
+          weightGrams: 0,
+          dimX: 0,
+          dimY: 0,
+          dimZ: 7.8,
+          pinCount: 0,
+          axleCount: 0,
+          triangleCount: 0,
+        },
+      };
+
+      // =========================================================================
+      // NOTIFICACIONES TOAST (SIN ALERT NI CONFIRM)
+      // =========================================================================
+      function showToast(title, subtitle = '', type = 'success') {
+        const container = document.getElementById('toastContainer');
+        if (!container) return;
+
+        const el = document.createElement('div');
+        const borderClass = type === 'error'
+          ? 'border-rose-500/60 bg-slate-950/95'
+          : 'border-emerald-500/60 bg-slate-950/95';
+        const iconColor = type === 'error' ? 'text-rose-400' : 'text-emerald-400';
+
+        el.className = `toast-enter pointer-events-auto border ${borderClass} rounded-xl px-4 py-3 shadow-2xl backdrop-blur-md max-w-xs flex items-start gap-2.5`;
+        el.innerHTML = `
+          <svg class="w-4 h-4 ${iconColor} mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+            <polyline points="20 6 9 17 4 12" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <div>
+            <div class="text-xs font-semibold text-white">${title}</div>
+            ${subtitle ? `<div class="text-[11px] text-slate-400 mt-0.5">${subtitle}</div>` : ''}
+          </div>
+        `;
+        container.appendChild(el);
+        setTimeout(() => {
+          el.style.opacity = '0';
+          el.style.transition = 'opacity 0.25s ease';
+          setTimeout(() => el.remove(), 260);
+        }, 3400);
+      }
+
+      // =========================================================================
+      // HISTORIAL DESHACER PARA EL EDITOR 3D DE CUBOS
+      // =========================================================================
+      function pushCubesHistory() {
+        const snapshot = {
+          items: JSON.parse(JSON.stringify(appState.cubes.items)),
+          activeAnchorId: appState.cubes.activeAnchorId,
+        };
+        appState.cubes.history.push(snapshot);
+        if (appState.cubes.history.length > 40) {
+          appState.cubes.history.shift();
+        }
+      }
+
+      function undoCubesAction() {
+        if (appState.cubes.history.length === 0) {
+          showToast('Nada que deshacer', 'No hay acciones previas en el historial.', 'error');
+          return;
+        }
+        const prev = appState.cubes.history.pop();
+        appState.cubes.items = prev.items;
+        appState.cubes.activeAnchorId = prev.activeAnchorId;
+        appState.cubes.is3DEditingActive = true;
+        syncAllUI();
+        rebuildSceneGeometry();
+        showToast('Acción deshecha', `Vuelta a ${appState.cubes.items.length} cubos.`);
+      }
+
+      // =========================================================================
+      // UTILIDADES DE ÁNGULO Y COORDENADAS
+      // =========================================================================
+      function normalizeAngleDeg(deg) {
+        let a = ((deg + 180) % 360 + 360) % 360 - 180;
+        if (Math.abs(a + 180) < 1e-6) a = 180;
+        return Math.round(a * 100) / 100;
+      }
+
+      function formatSignedAngle(deg) {
+        const clean = Math.abs(deg) < 0.05 ? 0 : deg;
+        const sign = clean > 0 ? '+' : '';
+        return `${sign}${clean.toFixed(1)}°`;
+      }
+
+      function coordKey(xMm, yMm) {
+        return `${Math.round(xMm * 20)}_${Math.round(yMm * 20)}`;
+      }
+
+      // =========================================================================
+      // CINEMÁTICA DE CUBOS EN MUNDO FIJO (Z = 0, C1 ANCLADO EN (0,0))
+      // =========================================================================
+      function computeCubesLayout() {
+        const items = appState.cubes.items;
+        const resolvedMap = new Map();
+        const resolved = [];
+
+        for (const item of items) {
+          if (item.parentId === null || item.parentId === undefined) {
+            const node = {
+              ...item,
+              x: 0,
+              y: 0,
+              parentX: 0,
+              parentY: 0,
+              refAngleRad: 0,
+              absAngleRad: 0,
+              absAngleDeg: 0,
+            };
+            resolvedMap.set(node.id, node);
+            resolved.push(node);
+          } else {
+            const parent = resolvedMap.get(item.parentId) || resolved[0];
+            const refAngleRad = parent ? parent.absAngleRad : 0;
+            const absAngleRad = refAngleRad + (item.angleDeg * Math.PI) / 180;
+            const distMm = item.distanceM * LEGO.PITCH_1M;
+            const x = (parent ? parent.x : 0) + Math.cos(absAngleRad) * distMm;
+            const y = (parent ? parent.y : 0) + Math.sin(absAngleRad) * distMm;
+
+            const node = {
+              ...item,
+              x,
+              y,
+              parentX: parent ? parent.x : 0,
+              parentY: parent ? parent.y : 0,
+              refAngleRad,
+              absAngleRad,
+              absAngleDeg: normalizeAngleDeg((absAngleRad * 180) / Math.PI),
+            };
+            resolvedMap.set(node.id, node);
+            resolved.push(node);
+          }
+        }
+
+        let activeAnchor = resolvedMap.get(appState.cubes.activeAnchorId);
+        if (!activeAnchor && resolved.length > 0) {
+          activeAnchor = resolved[resolved.length - 1];
+          appState.cubes.activeAnchorId = activeAnchor.id;
+        }
+
+        return {
+          items: resolved,
+          byId: resolvedMap,
+          activeAnchor: activeAnchor || null,
+        };
+      }
+
+      // =========================================================================
+      // PLANTILLAS PREDEFINIDAS ("PIEZAS QUE LEGO NUNCA FABRICÓ")
+      // =========================================================================
+      function applyTemplate(key) {
+        appState.templateKey = key;
+        appState.mode = 'cubes';
+        appState.cubes.is3DEditingActive = true;
+        appState.cubes.history = [];
+
+        if (key === 'l_offset_half') {
+          appState.partName = 'Viga_L_Offset_05M';
+          appState.thickness = 7.8;
+          appState.cubes.items = [
+            { id: 1, parentId: null, distanceM: 0, angleDeg: 0, holeType: 'axle', axleOrientation: 'aligned' },
+            { id: 2, parentId: 1, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 3, parentId: 2, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 4, parentId: 3, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 5, parentId: 4, distanceM: 1, angleDeg: 90, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 6, parentId: 5, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 7, parentId: 6, distanceM: 1.5, angleDeg: -90, holeType: 'axle', axleOrientation: 'aligned' },
+          ];
+          appState.cubes.activeAnchorId = 7;
+        } else if (key === 'triangle_345') {
+          appState.partName = 'Triangulo_Rigido_3_4_5M';
+          appState.thickness = 7.8;
+          appState.cubes.items = [
+            { id: 1, parentId: null, distanceM: 0, angleDeg: 0, holeType: 'axle', axleOrientation: 'aligned' },
+            { id: 2, parentId: 1, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 3, parentId: 2, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 4, parentId: 3, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 5, parentId: 4, distanceM: 1, angleDeg: 0, holeType: 'axle', axleOrientation: 'aligned' },
+            { id: 6, parentId: 5, distanceM: 1, angleDeg: 90, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 7, parentId: 6, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 8, parentId: 7, distanceM: 1, angleDeg: 0, holeType: 'axle', axleOrientation: 'aligned' },
+            { id: 9, parentId: 8, distanceM: 1, angleDeg: 126.87, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 10, parentId: 9, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 11, parentId: 10, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 12, parentId: 11, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 13, parentId: 12, distanceM: 1, angleDeg: 0, holeType: 'solid', axleOrientation: 'aligned' },
+          ];
+          appState.cubes.activeAnchorId = 8;
+        } else if (key === 'z_double_45') {
+          appState.partName = 'Viga_Z_Doble_45deg';
+          appState.thickness = 7.8;
+          appState.cubes.items = [
+            { id: 1, parentId: null, distanceM: 0, angleDeg: 0, holeType: 'axle', axleOrientation: 'aligned' },
+            { id: 2, parentId: 1, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 3, parentId: 2, distanceM: 1, angleDeg: 45, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 4, parentId: 3, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 5, parentId: 4, distanceM: 1, angleDeg: -45, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 6, parentId: 5, distanceM: 1, angleDeg: 0, holeType: 'axle', axleOrientation: 'aligned' },
+          ];
+          appState.cubes.activeAnchorId = 6;
+        } else if (key === 'star_multi_angle') {
+          appState.partName = 'Estrella_Ramificada_Cruces';
+          appState.thickness = 7.8;
+          appState.cubes.items = [
+            { id: 1, parentId: null, distanceM: 0, angleDeg: 0, holeType: 'axle', axleOrientation: 'aligned' },
+            { id: 2, parentId: 1, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 3, parentId: 2, distanceM: 1, angleDeg: 0, holeType: 'axle', axleOrientation: 'aligned' },
+            { id: 4, parentId: 1, distanceM: 1, angleDeg: 60, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 5, parentId: 4, distanceM: 1, angleDeg: 0, holeType: 'axle', axleOrientation: 'aligned' },
+            { id: 6, parentId: 1, distanceM: 1, angleDeg: 135, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 7, parentId: 6, distanceM: 1, angleDeg: 0, holeType: 'axle', axleOrientation: 'aligned' },
+            { id: 8, parentId: 1, distanceM: 1, angleDeg: -90, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 9, parentId: 8, distanceM: 1, angleDeg: 0, holeType: 'axle', axleOrientation: 'aligned' },
+          ];
+          appState.cubes.activeAnchorId = 3;
+        } else if (key === 'thin_angular_39') {
+          appState.partName = 'Viga_Fina_39mm_Angular';
+          appState.thickness = 3.9;
+          appState.cubes.items = [
+            { id: 1, parentId: null, distanceM: 0, angleDeg: 0, holeType: 'axle', axleOrientation: 'aligned' },
+            { id: 2, parentId: 1, distanceM: 1, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 3, parentId: 2, distanceM: 1, angleDeg: 22.5, holeType: 'pin', axleOrientation: 'aligned' },
+            { id: 4, parentId: 3, distanceM: 1, angleDeg: 45, holeType: 'axle', axleOrientation: 'aligned' },
+          ];
+          appState.cubes.activeAnchorId = 4;
+        }
+
+        syncAllUI();
+        rebuildSceneGeometry();
+      }
+
+      // =========================================================================
+      // CINEMÁTICA MODO 2: VIGA MULTI-SEGMENTO
+      // =========================================================================
+      function computeBeamLayout() {
+        const nodes = [{ id: 0, x: 0, y: 0, incomingAngleRad: 0, hasIncoming: false }];
+        const computedSegments = [];
+
+        for (let i = 0; i < appState.beam.segments.length; i++) {
+          const seg = appState.beam.segments[i];
+          const startNode = nodes.find((n) => n.id === seg.fromNode) || nodes[nodes.length - 1];
+          const baseAngleRad = startNode.hasIncoming ? startNode.incomingAngleRad : 0;
+          const absAngleRad = baseAngleRad + (seg.angleDeg * Math.PI) / 180;
+          const lengthMm = seg.lengthM * LEGO.PITCH_1M;
+
+          const endX = startNode.x + Math.cos(absAngleRad) * lengthMm;
+          const endY = startNode.y + Math.sin(absAngleRad) * lengthMm;
+          const endNodeId = i + 1;
+
+          nodes.push({
+            id: endNodeId,
+            x: endX,
+            y: endY,
+            incomingAngleRad: absAngleRad,
+            hasIncoming: true,
+          });
+
+          computedSegments.push({
+            ...seg,
+            index: i,
+            x1: startNode.x,
+            y1: startNode.y,
+            x2: endX,
+            y2: endY,
+            absAngleRad,
+            lengthMm,
+          });
+        }
+
+        const holeMap = new Map();
+        const stepM = appState.beam.halfStepHoles ? 0.5 : 1.0;
+
+        for (const seg of computedSegments) {
+          const stepsCount = Math.floor((seg.lengthM + 1e-6) / stepM);
+          const stations = [];
+          for (let s = 0; s <= stepsCount; s++) {
+            stations.push(s * stepM);
+          }
+          if (Math.abs(stations[stations.length - 1] - seg.lengthM) > 0.01) {
+            stations.push(seg.lengthM);
+          }
+
+          for (const mPos of stations) {
+            const distMm = mPos * LEGO.PITCH_1M;
+            const hx = seg.x1 + Math.cos(seg.absAngleRad) * distMm;
+            const hy = seg.y1 + Math.sin(seg.absAngleRad) * distMm;
+            const key = coordKey(hx, hy);
+
+            if (!holeMap.has(key)) {
+              const savedType = appState.beam.holeTypes[key] || 'pin';
+              holeMap.set(key, {
+                key,
+                x: hx,
+                y: hy,
+                angleRad: seg.absAngleRad,
+                type: savedType,
+              });
+            }
+          }
+        }
+
+        return {
+          nodes,
+          segments: computedSegments,
+          holes: Array.from(holeMap.values()),
+        };
+      }
+
+      // =========================================================================
+      // MOTOR DE DISTANCIA CON SIGNO (SDF) 2D Y EXTRACCIÓN DE CONTORNOS EXACTOS
+      // =========================================================================
+      function sdCapsule(px, py, ax, ay, bx, by, r) {
+        const pax = px - ax;
+        const pay = py - ay;
+        const bax = bx - ax;
+        const bay = by - ay;
+        const baLenSq = bax * bax + bay * bay;
+        const h = baLenSq > 1e-9 ? Math.max(0, Math.min(1, (pax * bax + pay * bay) / baLenSq)) : 0;
+        const dx = pax - bax * h;
+        const dy = pay - bay * h;
+        return Math.hypot(dx, dy) - r;
+      }
+
+      function sdRoundBox(px, py, cx, cy, halfW, halfH, r) {
+        const qx = Math.abs(px - cx) - (halfW - r);
+        const qy = Math.abs(py - cy) - (halfH - r);
+        const outDist = Math.hypot(Math.max(qx, 0), Math.max(qy, 0));
+        const inDist = Math.min(Math.max(qx, qy), 0);
+        return outDist + inDist - r;
+      }
+
+      function sdOrientedRoundBox(px, py, cx, cy, angleRad, halfW, halfH, r) {
+        const dx = px - cx;
+        const dy = py - cy;
+        const c = Math.cos(-angleRad);
+        const s = Math.sin(-angleRad);
+        const lx = dx * c - dy * s;
+        const ly = dx * s + dy * c;
+        return sdRoundBox(lx, ly, 0, 0, halfW, halfH, r);
+      }
+
+      function createPartDescriptor() {
+        if (appState.mode === 'cubes') {
+          const layout = computeCubesLayout();
+          const halfW = LEGO.BEAM_WIDTH / 2;
+          const cornerR = LEGO.CORNER_RADIUS;
+
+          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+          const boxes = [];
+          const arms = [];
+          const holeMap = new Map();
+
+          for (const c of layout.items) {
+            boxes.push({
+              x: c.x,
+              y: c.y,
+              angleRad: c.absAngleRad,
+              hw: halfW,
+              hh: halfW,
+              r: cornerR,
+            });
+
+            minX = Math.min(minX, c.x - halfW - 1);
+            maxX = Math.max(maxX, c.x + halfW + 1);
+            minY = Math.min(minY, c.y - halfW - 1);
+            maxY = Math.max(maxY, c.y + halfW + 1);
+
+            if (c.parentId !== null && c.parentId !== undefined) {
+              arms.push({
+                x1: c.parentX,
+                y1: c.parentY,
+                x2: c.x,
+                y2: c.y,
+                r: halfW,
+              });
+            }
+
+            if (c.holeType === 'pin' || c.holeType === 'axle') {
+              const hk = coordKey(c.x, c.y);
+              if (!holeMap.has(hk)) {
+                const crossAngle = c.axleOrientation === 'world' ? 0 : c.absAngleRad;
+                holeMap.set(hk, {
+                  x: c.x,
+                  y: c.y,
+                  type: c.holeType,
+                  angleRad: crossAngle,
+                });
+              }
+            }
+          }
+
+          if (!isFinite(minX)) {
+            minX = -halfW; maxX = halfW; minY = -halfW; maxY = halfW;
+          }
+
+          const sdf = (x, y) => {
+            let d = Infinity;
+            for (let i = 0; i < boxes.length; i++) {
+              const b = boxes[i];
+              const db = sdOrientedRoundBox(x, y, b.x, b.y, b.angleRad, b.hw, b.hh, b.r);
+              if (db < d) d = db;
+            }
+            for (let i = 0; i < arms.length; i++) {
+              const a = arms[i];
+              const da = sdCapsule(x, y, a.x1, a.y1, a.x2, a.y2, a.r);
+              if (da < d) d = da;
+            }
+            return d;
+          };
+
+          return {
+            sdf,
+            bbox: { minX, maxX, minY, maxY },
+            holes: Array.from(holeMap.values()),
+          };
+        } else if (appState.mode === 'beam') {
+          const layout = computeBeamLayout();
+          const radius = appState.beam.armWidth / 2;
+
+          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+          for (const n of layout.nodes) {
+            minX = Math.min(minX, n.x - radius);
+            maxX = Math.max(maxX, n.x + radius);
+            minY = Math.min(minY, n.y - radius);
+            maxY = Math.max(maxY, n.y + radius);
+          }
+          if (!isFinite(minX)) {
+            minX = -radius; maxX = radius; minY = -radius; maxY = radius;
+          }
+
+          const segs = layout.segments;
+          const sdf = (x, y) => {
+            if (segs.length === 0) {
+              return Math.hypot(x, y) - radius;
+            }
+            let d = Infinity;
+            for (let i = 0; i < segs.length; i++) {
+              const s = segs[i];
+              const ds = sdCapsule(x, y, s.x1, s.y1, s.x2, s.y2, radius);
+              if (ds < d) d = ds;
+            }
+            return d;
+          };
+
+          return {
+            sdf,
+            bbox: { minX, maxX, minY, maxY },
+            holes: layout.holes.filter((h) => h.type === 'pin' || h.type === 'axle'),
+          };
+        } else {
+          // Modo Matriz / Marco Custom
+          const { cols, rows, stepM, cells } = appState.grid;
+          const pitch = stepM * LEGO.PITCH_1M;
+          const cellWidth = stepM === 1.0 ? LEGO.BEAM_WIDTH : pitch;
+          const halfCell = cellWidth / 2;
+          const cornerRadius = Math.min(1.2, halfCell * 0.35);
+
+          const activeBoxes = [];
+          const holes = [];
+          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const state = (cells[r] && cells[r][c]) || 'empty';
+              if (state === 'empty') continue;
+
+              const cx = (c - (cols - 1) / 2) * pitch;
+              const cy = ((rows - 1) / 2 - r) * pitch;
+
+              activeBoxes.push({ cx, cy, hw: halfCell, hh: halfCell, r: cornerRadius });
+
+              minX = Math.min(minX, cx - halfCell);
+              maxX = Math.max(maxX, cx + halfCell);
+              minY = Math.min(minY, cy - halfCell);
+              maxY = Math.max(maxY, cy + halfCell);
+
+              if (c + 1 < cols && cells[r] && cells[r][c + 1] !== 'empty') {
+                activeBoxes.push({
+                  cx: cx + pitch / 2,
+                  cy,
+                  hw: pitch / 2,
+                  hh: halfCell,
+                  r: 0.2,
+                });
+              }
+              if (r + 1 < rows && cells[r + 1] && cells[r + 1][c] !== 'empty') {
+                activeBoxes.push({
+                  cx,
+                  cy: cy - pitch / 2,
+                  hw: halfCell,
+                  hh: pitch / 2,
+                  r: 0.2,
+                });
+              }
+
+              if (state === 'pin' || state === 'axle') {
+                holes.push({
+                  x: cx,
+                  y: cy,
+                  type: state,
+                  angleRad: 0,
+                });
+              }
+            }
+          }
+
+          if (activeBoxes.length === 0) {
+            activeBoxes.push({ cx: 0, cy: 0, hw: 3.9, hh: 3.9, r: 1.2 });
+            minX = -3.9; maxX = 3.9; minY = -3.9; maxY = 3.9;
+          }
+
+          const sdf = (x, y) => {
+            let d = Infinity;
+            for (let i = 0; i < activeBoxes.length; i++) {
+              const b = activeBoxes[i];
+              const db = sdRoundBox(x, y, b.cx, b.cy, b.hw, b.hh, b.r);
+              if (db < d) d = db;
+            }
+            return d;
+          };
+
+          return {
+            sdf,
+            bbox: { minX, maxX, minY, maxY },
+            holes,
+          };
+        }
+      }
+
+      /**
+       * Extrae todos los contornos cerrados (exteriores CCW e interiores CW) de `sdf(x,y) = 0`
+       * usando claves topológicas enteras por arista, decimación de micro-aristas y
+       * proyección analítica de Newton-Raphson.
+       */
+      function extractSdfContours(sdf, bbox) {
+        const step = 0.28;
+        const margin = 3.6;
+        const x0 = bbox.minX - margin;
+        const y0 = bbox.minY - margin;
+        const x1 = bbox.maxX + margin;
+        const y1 = bbox.maxY + margin;
+
+        const nx = Math.ceil((x1 - x0) / step) + 1;
+        const ny = Math.ceil((y1 - y0) / step) + 1;
+
+        const grid = new Float32Array(nx * ny);
+        for (let j = 0; j < ny; j++) {
+          const y = y0 + j * step;
+          const rowOffset = j * nx;
+          for (let i = 0; i < nx; i++) {
+            grid[rowOffset + i] = sdf(x0 + i * step, y);
+          }
+        }
+
+        const segments = [];
+        const interp = (vA, vB) => {
+          const denom = vA - vB;
+          if (Math.abs(denom) < 1e-9) return 0.5;
+          return Math.max(0.01, Math.min(0.99, vA / denom));
+        };
+
+        // Clave topológica entera por arista de celda para evitar roturas de punto flotante
+        const edgeKeyH = (i, j) => `H_${i}_${j}`;
+        const edgeKeyV = (i, j) => `V_${i}_${j}`;
+
+        for (let j = 0; j < ny - 1; j++) {
+          const py = y0 + j * step;
+          const r0 = j * nx;
+          const r1 = (j + 1) * nx;
+          for (let i = 0; i < nx - 1; i++) {
+            const px = x0 + i * step;
+            const v00 = grid[r0 + i];
+            const v10 = grid[r0 + i + 1];
+            const v11 = grid[r1 + i + 1];
+            const v01 = grid[r1 + i];
+
+            const code = (v00 < 0 ? 1 : 0) | (v10 < 0 ? 2 : 0) | (v11 < 0 ? 4 : 0) | (v01 < 0 ? 8 : 0);
+            if (code === 0 || code === 15) continue;
+
+            const bottom = () => ({ key: edgeKeyH(i, j), pt: [px + interp(v00, v10) * step, py] });
+            const right  = () => ({ key: edgeKeyV(i + 1, j), pt: [px + step, py + interp(v10, v11) * step] });
+            const top    = () => ({ key: edgeKeyH(i, j + 1), pt: [px + interp(v01, v11) * step, py + step] });
+            const left   = () => ({ key: edgeKeyV(i, j), pt: [px, py + interp(v00, v01) * step] });
+
+            switch (code) {
+              case 1:  segments.push([bottom(), left()]); break;
+              case 2:  segments.push([right(), bottom()]); break;
+              case 3:  segments.push([right(), left()]); break;
+              case 4:  segments.push([top(), right()]); break;
+              case 5: {
+                const centerVal = sdf(px + step * 0.5, py + step * 0.5);
+                if (centerVal < 0) {
+                  segments.push([top(), left()]);
+                  segments.push([bottom(), right()]);
+                } else {
+                  segments.push([bottom(), left()]);
+                  segments.push([top(), right()]);
+                }
+                break;
+              }
+              case 6:  segments.push([top(), bottom()]); break;
+              case 7:  segments.push([top(), left()]); break;
+              case 8:  segments.push([left(), top()]); break;
+              case 9:  segments.push([bottom(), top()]); break;
+              case 10: {
+                const centerVal = sdf(px + step * 0.5, py + step * 0.5);
+                if (centerVal < 0) {
+                  segments.push([right(), top()]);
+                  segments.push([left(), bottom()]);
+                } else {
+                  segments.push([right(), bottom()]);
+                  segments.push([left(), top()]);
+                }
+                break;
+              }
+              case 11: segments.push([right(), top()]); break;
+              case 12: segments.push([left(), right()]); break;
+              case 13: segments.push([bottom(), right()]); break;
+              case 14: segments.push([left(), bottom()]); break;
+            }
+          }
+        }
+
+        const nextMap = new Map();
+        for (let idx = 0; idx < segments.length; idx++) {
+          const [a, b] = segments[idx];
+          if (!nextMap.has(a.key)) nextMap.set(a.key, []);
+          nextMap.get(a.key).push({ to: b, used: false });
+        }
+
+        const rawLoops = [];
+        for (let idx = 0; idx < segments.length; idx++) {
+          const [startNode] = segments[idx];
+          const list = nextMap.get(startNode.key);
+          if (!list) continue;
+          const firstEdge = list.find((e) => !e.used);
+          if (!firstEdge) continue;
+
+          const loop = [startNode.pt];
+          firstEdge.used = true;
+          let curr = firstEdge.to;
+
+          for (let guard = 0; guard < 30000; guard++) {
+            if (curr.key === startNode.key) break;
+            loop.push(curr.pt);
+            const candidates = nextMap.get(curr.key);
+            if (!candidates) break;
+            const nextEdge = candidates.find((e) => !e.used);
+            if (!nextEdge) break;
+            nextEdge.used = true;
+            curr = nextEdge.to;
+          }
+
+          if (loop.length >= 6) {
+            rawLoops.push(loop);
+          }
+        }
+
+        const eps = 0.02;
+        const refinedLoops = rawLoops.map((loop) => {
+          // Eliminar micro-aristas (< 0.18 mm) para evitar triángulos degenerados
+          let pts = [];
+          for (let i = 0; i < loop.length; i++) {
+            const p = loop[i];
+            if (pts.length === 0) {
+              pts.push([p[0], p[1]]);
+            } else {
+              const prev = pts[pts.length - 1];
+              if (Math.hypot(p[0] - prev[0], p[1] - prev[1]) >= 0.18) {
+                pts.push([p[0], p[1]]);
+              }
+            }
+          }
+          if (pts.length > 3 && Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) < 0.18) {
+            pts.pop();
+          }
+
+          const n = pts.length;
+          if (n < 6) {
+            return { pts: [], normals: [], signedArea: 0, isOuter: false };
+          }
+
+          // Suavizado ligero + Proyección de Newton-Raphson sobre sdf(x,y) = 0
+          for (let iter = 0; iter < 3; iter++) {
+            const nextPts = new Array(n);
+            for (let i = 0; i < n; i++) {
+              const prev = pts[(i - 1 + n) % n];
+              const curr = pts[i];
+              const next = pts[(i + 1) % n];
+
+              let x = iter < 2 ? 0.5 * curr[0] + 0.25 * (prev[0] + next[0]) : curr[0];
+              let y = iter < 2 ? 0.5 * curr[1] + 0.25 * (prev[1] + next[1]) : curr[1];
+
+              const f = sdf(x, y);
+              const gx = (sdf(x + eps, y) - sdf(x - eps, y)) / (2 * eps);
+              const gy = (sdf(x, y + eps) - sdf(x, y - eps)) / (2 * eps);
+              const gLenSq = gx * gx + gy * gy;
+              if (gLenSq > 1e-8) {
+                x -= (f * gx) / gLenSq;
+                y -= (f * gy) / gLenSq;
+              }
+              nextPts[i] = [x, y];
+            }
+            pts = nextPts;
+          }
+
+          const normals = pts.map(([x, y]) => {
+            const gx = (sdf(x + eps, y) - sdf(x - eps, y)) / (2 * eps);
+            const gy = (sdf(x, y + eps) - sdf(x, y - eps)) / (2 * eps);
+            const len = Math.hypot(gx, gy) || 1;
+            return [gx / len, gy / len];
+          });
+
+          let signedArea = 0;
+          for (let i = 0; i < n; i++) {
+            const [x1, y1] = pts[i];
+            const [x2, y2] = pts[(i + 1) % n];
+            signedArea += x1 * y2 - x2 * y1;
+          }
+          signedArea *= 0.5;
+
+          return {
+            pts,
+            normals,
+            signedArea,
+            isOuter: signedArea > 0,
+          };
+        });
+
+        return refinedLoops.filter((l) => l.pts.length >= 6);
+      }
+
+      // =========================================================================
+      // GENERADOR DE GEOMETRÍA 3D MANIFOLD SIN SOPORTES (Z = 0 SOBRE CAMA)
+      // =========================================================================
+      function createAxleCrossLoopCW(cx, cy, angleRad, clearance) {
+        const outerR = (LEGO.AXLE_OUTER_DIA + clearance) / 2;
+        const halfSlot = (LEGO.AXLE_SLOT_WIDTH + clearance) / 2;
+        const alpha = Math.asin(Math.min(0.95, halfSlot / outerR));
+
+        const rawCCW = [];
+        for (let arm = 0; arm < 4; arm++) {
+          const baseA = arm * (Math.PI / 2);
+          const tipAngles = [baseA - alpha, baseA, baseA + alpha];
+          for (const a of tipAngles) {
+            rawCCW.push([Math.cos(a) * outerR, Math.sin(a) * outerR]);
+          }
+          const cornerA = baseA + Math.PI / 4;
+          const cornerDist = Math.SQRT2 * halfSlot;
+          rawCCW.push([Math.cos(cornerA) * cornerDist, Math.sin(cornerA) * cornerDist]);
+        }
+
+        const cosA = Math.cos(angleRad);
+        const sinA = Math.sin(angleRad);
+        const cw = [];
+        for (let i = rawCCW.length - 1; i >= 0; i--) {
+          const [lx, ly] = rawCCW[i];
+          cw.push([
+            cx + lx * cosA - ly * sinA,
+            cy + lx * sinA + ly * cosA,
+          ]);
+        }
+        return cw;
+      }
+
+      function createCircleHoleCW(cx, cy, radius, segments = 48) {
+        const pts = [];
+        for (let i = 0; i < segments; i++) {
+          const theta = -(i / segments) * Math.PI * 2;
+          pts.push([cx + Math.cos(theta) * radius, cy + Math.sin(theta) * radius]);
+        }
+        return pts;
+      }
+
+      function buildSupportFreeGeometry() {
+        const descriptor = createPartDescriptor();
+        const loops = extractSdfContours(descriptor.sdf, descriptor.bbox);
+
+        const outerLoops = loops.filter((l) => l.isOuter && Math.abs(l.signedArea) > 10);
+        const innerFrameLoops = loops.filter((l) => !l.isOuter && Math.abs(l.signedArea) > 6);
+
+        const H = Math.max(2.0, appState.thickness);
+        const cb = Math.min(appState.elephantChamfer, 0.8, H * 0.25);
+        const dCb = Math.min(LEGO.COUNTERBORE_DEPTH, H * 0.42);
+        const ct = Math.min(0.18, H * 0.12);
+
+        const pinBoreR = (LEGO.PIN_BASE_DIA + appState.pinClearance) / 2;
+        const pinCbR = (LEGO.COUNTERBORE_DIA + appState.pinClearance) / 2;
+
+        const zBottomChamferEnd = appState.bottomType === 'chamfer45' ? dCb : 0;
+        const zTopCbStart = H - dCb;
+
+        const rawZ = [0];
+        if (cb > 0.005) rawZ.push(cb);
+        if (zBottomChamferEnd > cb + 0.01) rawZ.push(zBottomChamferEnd);
+        if (zTopCbStart > rawZ[rawZ.length - 1] + 0.02) {
+          rawZ.push(zTopCbStart);
+          rawZ.push(zTopCbStart + 0.002);
+        }
+        if (H - ct > rawZ[rawZ.length - 1] + 0.02) {
+          rawZ.push(H - ct);
+        }
+        rawZ.push(H);
+
+        const positions = [];
+        function pushTri(ax, ay, az, bx, by, bz, cx, cy, cz) {
+          positions.push(ax, ay, az, bx, by, bz, cx, cy, cz);
+        }
+
+        function getOuterInsetAtZ(z) {
+          if (cb > 0.005 && z < cb) return cb - z;
+          if (ct > 0.005 && z > H - ct) return z - (H - ct);
+          return 0;
+        }
+
+        function getPinRadiusAtZ(z, isUpperCbSide) {
+          if (appState.bottomType === 'chamfer45' && z <= zBottomChamferEnd + 1e-5) {
+            const t = zBottomChamferEnd > 0 ? Math.min(1, Math.max(0, z / zBottomChamferEnd)) : 1;
+            return pinCbR * (1 - t) + pinBoreR * t;
+          }
+          if (z > zTopCbStart + 0.001 || (Math.abs(z - zTopCbStart) <= 0.003 && isUpperCbSide)) {
+            return pinCbR;
+          }
+          return pinBoreR;
+        }
+
+        // 1. Coser paredes exteriores y ventanas interiores
+        const allContourLoops = [...outerLoops, ...innerFrameLoops];
+        for (const loop of allContourLoops) {
+          const n = loop.pts.length;
+          for (let m = 0; m < rawZ.length - 1; m++) {
+            const z0 = rawZ[m];
+            const z1 = rawZ[m + 1];
+            const inset0 = getOuterInsetAtZ(z0);
+            const inset1 = getOuterInsetAtZ(z1);
+
+            for (let i = 0; i < n; i++) {
+              const j = (i + 1) % n;
+              const [pxi, pyi] = loop.pts[i];
+              const [nxi, nyi] = loop.normals[i];
+              const [pxj, pyj] = loop.pts[j];
+              const [nxj, nyj] = loop.normals[j];
+
+              const b0x = pxi - nxi * inset0, b0y = pyi - nyi * inset0;
+              const b1x = pxj - nxj * inset0, b1y = pyj - nyj * inset0;
+              const t0x = pxi - nxi * inset1, t0y = pyi - nyi * inset1;
+              const t1x = pxj - nxj * inset1, t1y = pyj - nyj * inset1;
+
+              pushTri(b0x, b0y, z0, b1x, b1y, z0, t1x, t1y, z1);
+              pushTri(b0x, b0y, z0, t1x, t1y, z1, t0x, t0y, z1);
+            }
+          }
+        }
+
+        // 2. Coser paredes de agujeros (Pin O y Cruz Eje +)
+        const pinSegs = 48;
+        for (const hole of descriptor.holes) {
+          if (hole.type === 'pin') {
+            for (let m = 0; m < rawZ.length - 1; m++) {
+              const z0 = rawZ[m];
+              const z1 = rawZ[m + 1];
+              const isStep = Math.abs(z1 - z0) < 0.005;
+              const r0 = getPinRadiusAtZ(z0, false);
+              const r1 = getPinRadiusAtZ(z1, isStep || z1 > zTopCbStart + 0.001);
+
+              const ring0 = createCircleHoleCW(hole.x, hole.y, r0, pinSegs);
+              const ring1 = createCircleHoleCW(hole.x, hole.y, r1, pinSegs);
+
+              for (let i = 0; i < pinSegs; i++) {
+                const j = (i + 1) % pinSegs;
+                const [b0x, b0y] = ring0[i];
+                const [b1x, b1y] = ring0[j];
+                const [t0x, t0y] = ring1[i];
+                const [t1x, t1y] = ring1[j];
+
+                pushTri(b0x, b0y, z0, b1x, b1y, z0, t1x, t1y, z1);
+                pushTri(b0x, b0y, z0, t1x, t1y, z1, t0x, t0y, z1);
+              }
+            }
+          } else if (hole.type === 'axle') {
+            const axleBaseExtra = appState.bottomType === 'chamfer45' ? 0.25 : 0;
+            for (let m = 0; m < rawZ.length - 1; m++) {
+              const z0 = rawZ[m];
+              const z1 = rawZ[m + 1];
+              const extra0 = (zBottomChamferEnd > 0 && z0 < zBottomChamferEnd)
+                ? axleBaseExtra * (1 - z0 / zBottomChamferEnd)
+                : 0;
+              const extra1 = (zBottomChamferEnd > 0 && z1 < zBottomChamferEnd)
+                ? axleBaseExtra * (1 - z1 / zBottomChamferEnd)
+                : 0;
+
+              const ring0 = createAxleCrossLoopCW(hole.x, hole.y, hole.angleRad, appState.axleClearance + extra0);
+              const ring1 = createAxleCrossLoopCW(hole.x, hole.y, hole.angleRad, appState.axleClearance + extra1);
+              const nAxle = ring0.length;
+
+              for (let i = 0; i < nAxle; i++) {
+                const j = (i + 1) % nAxle;
+                const [b0x, b0y] = ring0[i];
+                const [b1x, b1y] = ring0[j];
+                const [t0x, t0y] = ring1[i];
+                const [t1x, t1y] = ring1[j];
+
+                pushTri(b0x, b0y, z0, b1x, b1y, z0, t1x, t1y, z1);
+                pushTri(b0x, b0y, z0, t1x, t1y, z1, t0x, t0y, z1);
+              }
+            }
+          }
+        }
+
+        // 3. Tapas planares Inferior (Z=0) y Superior (Z=H) mediante Earcut
+        let totalBedAreaMm2 = 0;
+
+        function buildCapAtZ(z, isTop) {
+          const inset = getOuterInsetAtZ(z);
+          const capHoles = [];
+
+          for (const winLoop of innerFrameLoops) {
+            capHoles.push(
+              winLoop.pts.map(([px, py], idx) => {
+                const [nx, ny] = winLoop.normals[idx];
+                return [px - nx * inset, py - ny * inset];
+              })
+            );
+          }
+
+          for (const hole of descriptor.holes) {
+            if (hole.type === 'pin') {
+              const r = getPinRadiusAtZ(z, isTop);
+              capHoles.push(createCircleHoleCW(hole.x, hole.y, r, pinSegs));
+            } else if (hole.type === 'axle') {
+              const axleBaseExtra = (!isTop && appState.bottomType === 'chamfer45') ? 0.25 : 0;
+              capHoles.push(createAxleCrossLoopCW(hole.x, hole.y, hole.angleRad, appState.axleClearance + axleBaseExtra));
+            }
+          }
+
+          for (const outerLoop of outerLoops) {
+            const contour2D = outerLoop.pts.map(([px, py], idx) => {
+              const [nx, ny] = outerLoop.normals[idx];
+              return new THREE.Vector2(px - nx * inset, py - ny * inset);
+            });
+
+            const holes2D = [];
+            for (const hPts of capHoles) {
+              if (hPts.length < 3) continue;
+              const testX = hPts[0][0];
+              const testY = hPts[0][1];
+              if (isPointInPolygon(testX, testY, contour2D)) {
+                holes2D.push(hPts.map(([hx, hy]) => new THREE.Vector2(hx, hy)));
+              }
+            }
+
+            const faces = THREE.ShapeUtils.triangulateShape(contour2D, holes2D);
+
+            const allVerts = [...contour2D];
+            for (const h of holes2D) {
+              for (const v of h) allVerts.push(v);
+            }
+
+            for (let f = 0; f < faces.length; f++) {
+              const [ia, ib, ic] = faces[f];
+              const a = allVerts[ia];
+              const b = allVerts[ib];
+              const c = allVerts[ic];
+
+              const triArea = Math.abs((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)) * 0.5;
+              if (!isTop) totalBedAreaMm2 += triArea;
+
+              if (isTop) {
+                pushTri(a.x, a.y, z, b.x, b.y, z, c.x, c.y, z);
+              } else {
+                pushTri(a.x, a.y, z, c.x, c.y, z, b.x, b.y, z);
+              }
+            }
+          }
+        }
+
+        buildCapAtZ(0, false);
+        buildCapAtZ(H, true);
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.computeVertexNormals();
+        geometry.computeBoundingBox();
+
+        const bb = geometry.boundingBox;
+        const dimX = bb ? (bb.max.x - bb.min.x) : 0;
+        const dimY = bb ? (bb.max.y - bb.min.y) : 0;
+        const dimZ = bb ? (bb.max.z - bb.min.z) : H;
+
+        const volumeCm3 = (totalBedAreaMm2 * H) / 1000;
+        const weightGrams = volumeCm3 * 1.24;
+
+        appState.metrics = {
+          bedAreaMm2: totalBedAreaMm2,
+          volumeCm3,
+          weightGrams,
+          dimX,
+          dimY,
+          dimZ,
+          pinCount: descriptor.holes.filter((h) => h.type === 'pin').length,
+          axleCount: descriptor.holes.filter((h) => h.type === 'axle').length,
+          triangleCount: positions.length / 9,
+        };
+
+        return geometry;
+      }
+
+      function isPointInPolygon(x, y, polyVec2) {
+        let inside = false;
+        for (let i = 0, j = polyVec2.length - 1; i < polyVec2.length; j = i++) {
+          const xi = polyVec2[i].x, yi = polyVec2[i].y;
+          const xj = polyVec2[j].x, yj = polyVec2[j].y;
+          const intersect = ((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi + 1e-12) + xi);
+          if (intersect) inside = !inside;
+        }
+        return inside;
+      }
+
+      // =========================================================================
+      // VISOR 3D CON THREE.JS + EDITOR DIRECTO DE CUBOS EN MUNDO FIJO
+      // =========================================================================
+      let scene, camera, renderer, controls;
+      let partMesh = null;
+      let edgesLines = null;
+      let currentGeometry = null;
+
+      // Objetos 3D del Editor Directo de Cubos
+      let editor3dGroup = null;
+      let protractorGroup = null;
+      let sectorMesh = null;
+      let refLineMesh = null;
+      let anchorBeaconGroup = null;
+      let hoverCubeRing = null;
+      let ghostCubeGroup = null;
+      let ghostArmMesh = null;
+      let cubeHitMeshes = [];
+      let bedHitPlane = null;
+
+      function initThreeViewport() {
+        const mount = document.getElementById('threeCanvasMount');
+        if (!mount) return;
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color('#080b10');
+        scene.fog = new THREE.FogExp2('#080b10', 0.0020);
+
+        const width = mount.clientWidth || 600;
+        const height = mount.clientHeight || 480;
+
+        camera = new THREE.PerspectiveCamera(38, width / height, 0.5, 1500);
+        camera.up.set(0, 0, 1);
+        camera.position.set(52, -72, 62);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.15;
+        mount.appendChild(renderer.domElement);
+
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.07;
+        controls.minDistance = 12;
+        controls.maxDistance = 420;
+        controls.target.set(12, 6, 4);
+
+        // Iluminación de estudio CAD
+        const hemiLight = new THREE.HemisphereLight('#f8fafc', '#1e293b', 0.72);
+        hemiLight.position.set(0, 0, 120);
+        scene.add(hemiLight);
+
+        const keyLight = new THREE.DirectionalLight('#ffffff', 0.95);
+        keyLight.position.set(60, -80, 110);
+        keyLight.castShadow = true;
+        keyLight.shadow.mapSize.width = 2048;
+        keyLight.shadow.mapSize.height = 2048;
+        keyLight.shadow.camera.near = 10;
+        keyLight.shadow.camera.far = 300;
+        const d = 110;
+        keyLight.shadow.camera.left = -d;
+        keyLight.shadow.camera.right = d;
+        keyLight.shadow.camera.top = d;
+        keyLight.shadow.camera.bottom = -d;
+        keyLight.shadow.bias = -0.0005;
+        scene.add(keyLight);
+
+        const rimLight = new THREE.DirectionalLight('#38bdf8', 0.35);
+        rimLight.position.set(-70, 85, 50);
+        scene.add(rimLight);
+
+        const bottomInspectLight = new THREE.DirectionalLight('#f97316', 0.32);
+        bottomInspectLight.position.set(0, 0, -90);
+        scene.add(bottomInspectLight);
+
+        buildVirtualPrintBed();
+        initEditor3dHelpers();
+        setupViewportInteraction();
+
+        const resizeObserver = new ResizeObserver(() => {
+          const w = mount.clientWidth;
+          const h = mount.clientHeight;
+          if (w > 0 && h > 0) {
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+          }
+        });
+        resizeObserver.observe(mount);
+
+        function animate() {
+          requestAnimationFrame(animate);
+          controls.update();
+          renderer.render(scene, camera);
+          update3dProjectedLabels();
+        }
+        animate();
+      }
+
+      function buildVirtualPrintBed() {
+        const bedGroup = new THREE.Group();
+        const bedSize = 240; // 30 módulos × 8.0 mm
+
+        const bedGeo = new THREE.PlaneGeometry(bedSize, bedSize);
+        const bedMat = new THREE.MeshStandardMaterial({
+          color: '#0e131d',
+          roughness: 0.78,
+          metalness: 0.12,
+        });
+        const bedMesh = new THREE.Mesh(bedGeo, bedMat);
+        bedMesh.position.z = -0.05;
+        bedMesh.receiveShadow = true;
+        bedGroup.add(bedMesh);
+
+        // Plano invisible en Z = 0 para raycasting directo del ratón
+        bedHitPlane = new THREE.Mesh(
+          new THREE.PlaneGeometry(400, 400),
+          new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide })
+        );
+        bedHitPlane.position.z = 0;
+        scene.add(bedHitPlane);
+
+        const borderPoints = [
+          new THREE.Vector3(-bedSize / 2, -bedSize / 2, -0.02),
+          new THREE.Vector3(bedSize / 2, -bedSize / 2, -0.02),
+          new THREE.Vector3(bedSize / 2, bedSize / 2, -0.02),
+          new THREE.Vector3(-bedSize / 2, bedSize / 2, -0.02),
+          new THREE.Vector3(-bedSize / 2, -bedSize / 2, -0.02),
+        ];
+        bedGroup.add(new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(borderPoints),
+          new THREE.LineBasicMaterial({ color: '#334155' })
+        ));
+
+        const minorVertices = [];
+        const majorVertices = [];
+        const half = bedSize / 2;
+
+        for (let v = -half; v <= half + 0.01; v += 4.0) {
+          const isMajor = Math.abs(Math.round(v / 8.0) * 8.0 - v) < 0.01;
+          const target = isMajor ? majorVertices : minorVertices;
+          target.push(v, -half, -0.02, v, half, -0.02);
+          target.push(-half, v, -0.02, half, v, -0.02);
+        }
+
+        const minorGeo = new THREE.BufferGeometry();
+        minorGeo.setAttribute('position', new THREE.Float32BufferAttribute(minorVertices, 3));
+        bedGroup.add(new THREE.LineSegments(minorGeo, new THREE.LineBasicMaterial({ color: '#151d2b' })));
+
+        const majorGeo = new THREE.BufferGeometry();
+        majorGeo.setAttribute('position', new THREE.Float32BufferAttribute(majorVertices, 3));
+        bedGroup.add(new THREE.LineSegments(majorGeo, new THREE.LineBasicMaterial({ color: '#243147' })));
+
+        // Ejes de coordenadas en el origen (X rojo, Y verde)
+        bedGroup.add(new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0.02), new THREE.Vector3(24, 0, 0.02)]),
+          new THREE.LineBasicMaterial({ color: '#ef4444' })
+        ));
+        bedGroup.add(new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0.02), new THREE.Vector3(0, 24, 0.02)]),
+          new THREE.LineBasicMaterial({ color: '#22c55e' })
+        ));
+
+        scene.add(bedGroup);
+      }
+
+      function createTextSprite(text, colorStr = '#38bdf8') {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.font = 'bold 26px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(8, 11, 16, 0.82)';
+        ctx.beginPath();
+        ctx.roundRect(14, 12, 100, 40, 10);
+        ctx.fill();
+        ctx.fillStyle = colorStr;
+        ctx.fillText(text, 64, 33);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+        const sprite = new THREE.Sprite(mat);
+        sprite.scale.set(5.6, 2.8, 1);
+        return sprite;
+      }
+
+      function initEditor3dHelpers() {
+        editor3dGroup = new THREE.Group();
+        scene.add(editor3dGroup);
+
+        // 1. Transportador Angular 3D Graduado
+        protractorGroup = new THREE.Group();
+        protractorGroup.visible = false;
+        editor3dGroup.add(protractorGroup);
+
+        const outerR = 14.5;
+        const innerR = 11.2;
+        const ringGeo = new THREE.RingGeometry(innerR, outerR, 72);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: '#0ea5e9',
+          transparent: true,
+          opacity: 0.16,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        protractorGroup.add(new THREE.Mesh(ringGeo, ringMat));
+
+        // Borde exterior del transportador
+        const circlePts = [];
+        for (let i = 0; i <= 72; i++) {
+          const a = (i / 72) * Math.PI * 2;
+          circlePts.push(new THREE.Vector3(Math.cos(a) * outerR, Math.sin(a) * outerR, 0.02));
+        }
+        protractorGroup.add(new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(circlePts),
+          new THREE.LineBasicMaterial({ color: '#38bdf8', transparent: true, opacity: 0.65 })
+        ));
+
+        // Marcas cada 15°
+        const tickVerts = [];
+        for (let deg = 0; deg < 360; deg += 15) {
+          const rad = (deg * Math.PI) / 180;
+          const isMajor = deg % 45 === 0;
+          const r0 = isMajor ? innerR - 1.2 : innerR;
+          const r1 = outerR + (isMajor ? 0.8 : 0);
+          tickVerts.push(
+            Math.cos(rad) * r0, Math.sin(rad) * r0, 0.03,
+            Math.cos(rad) * r1, Math.sin(rad) * r1, 0.03
+          );
+        }
+        const tickGeo = new THREE.BufferGeometry();
+        tickGeo.setAttribute('position', new THREE.Float32BufferAttribute(tickVerts, 3));
+        protractorGroup.add(new THREE.LineSegments(
+          tickGeo,
+          new THREE.LineBasicMaterial({ color: '#7dd3fc', transparent: true, opacity: 0.75 })
+        ));
+
+        // Línea de referencia 0° (dirección de entrada del Punto de Inclusión)
+        refLineMesh = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0, 0.04),
+            new THREE.Vector3(outerR + 3.5, 0, 0.04),
+          ]),
+          new THREE.LineBasicMaterial({ color: '#22d3ee' })
+        );
+        protractorGroup.add(refLineMesh);
+
+        // Etiquetas de referencia alrededor del transportador
+        const labelSpecs = [
+          { deg: 0, text: '0°', color: '#22d3ee' },
+          { deg: 45, text: '+45°', color: '#fb923c' },
+          { deg: 90, text: '+90°', color: '#fb923c' },
+          { deg: -45, text: '-45°', color: '#fb923c' },
+          { deg: -90, text: '-90°', color: '#fb923c' },
+        ];
+        for (const ls of labelSpecs) {
+          const rad = (ls.deg * Math.PI) / 180;
+          const sp = createTextSprite(ls.text, ls.color);
+          sp.position.set(Math.cos(rad) * (outerR + 3.2), Math.sin(rad) * (outerR + 3.2), 0.25);
+          protractorGroup.add(sp);
+        }
+
+        // Sector angular iluminado entre 0° y el ángulo fantasma actual
+        sectorMesh = new THREE.Mesh(
+          new THREE.BufferGeometry(),
+          new THREE.MeshBasicMaterial({
+            color: '#f97316',
+            transparent: true,
+            opacity: 0.34,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          })
+        );
+        protractorGroup.add(sectorMesh);
+
+        // 2. Baliza del Punto de Inclusión Activo (⚓ C#)
+        anchorBeaconGroup = new THREE.Group();
+        const beaconRing = new THREE.Mesh(
+          new THREE.RingGeometry(2.7, 3.6, 36),
+          new THREE.MeshBasicMaterial({ color: '#22d3ee', side: THREE.DoubleSide, depthWrite: false })
+        );
+        anchorBeaconGroup.add(beaconRing);
+        editor3dGroup.add(anchorBeaconGroup);
+
+        // 3. Resaltado Hover sobre Cubos Existentes
+        const hw = LEGO.BEAM_WIDTH / 2 + 0.25;
+        const hoverPts = [
+          new THREE.Vector3(-hw, -hw, 0),
+          new THREE.Vector3(hw, -hw, 0),
+          new THREE.Vector3(hw, hw, 0),
+          new THREE.Vector3(-hw, hw, 0),
+          new THREE.Vector3(-hw, -hw, 0),
+        ];
+        hoverCubeRing = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(hoverPts),
+          new THREE.LineBasicMaterial({ color: '#38bdf8' })
+        );
+        hoverCubeRing.visible = false;
+        editor3dGroup.add(hoverCubeRing);
+
+        // 4. Brazo Puente Fantasma
+        ghostArmMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(1, LEGO.BEAM_WIDTH, LEGO.BEAM_HEIGHT),
+          new THREE.MeshBasicMaterial({
+            color: '#f97316',
+            transparent: true,
+            opacity: 0.22,
+            depthWrite: false,
+          })
+        );
+        ghostArmMesh.visible = false;
+        editor3dGroup.add(ghostArmMesh);
+
+        // 5. Cubo Fantasma 3D (7.8 × 7.8 × H mm) con vista previa de agujero
+        ghostCubeGroup = new THREE.Group();
+        ghostCubeGroup.visible = false;
+        editor3dGroup.add(ghostCubeGroup);
+      }
+
+      function rebuildGhostCubeVisual() {
+        if (!ghostCubeGroup) return;
+        while (ghostCubeGroup.children.length > 0) {
+          const ch = ghostCubeGroup.children[0];
+          ghostCubeGroup.remove(ch);
+          if (ch.geometry) ch.geometry.dispose();
+          if (ch.material) ch.material.dispose();
+        }
+
+        const H = appState.thickness;
+        const boxGeo = new THREE.BoxGeometry(LEGO.BEAM_WIDTH, LEGO.BEAM_WIDTH, H);
+        const boxMat = new THREE.MeshStandardMaterial({
+          color: '#f97316',
+          transparent: true,
+          opacity: 0.36,
+          roughness: 0.4,
+          depthWrite: false,
+        });
+        const boxMesh = new THREE.Mesh(boxGeo, boxMat);
+        boxMesh.position.z = H / 2;
+        ghostCubeGroup.add(boxMesh);
+
+        const edgeLines = new THREE.LineSegments(
+          new THREE.EdgesGeometry(boxGeo),
+          new THREE.LineBasicMaterial({ color: '#fdba74' })
+        );
+        edgeLines.position.z = H / 2;
+        ghostCubeGroup.add(edgeLines);
+
+        // Vista previa de perforación superior (O / + / ●)
+        const insType = appState.cubes.insertHoleType;
+        if (insType === 'pin') {
+          const ringGeo = new THREE.RingGeometry(2.1, 2.8, 32);
+          const ringMesh = new THREE.Mesh(
+            ringGeo,
+            new THREE.MeshBasicMaterial({ color: '#38bdf8', side: THREE.DoubleSide, depthTest: false })
+          );
+          ringMesh.position.z = H + 0.12;
+          ghostCubeGroup.add(ringMesh);
+        } else if (insType === 'axle') {
+          const bar1 = new THREE.Mesh(
+            new THREE.BoxGeometry(4.8, 1.7, 0.16),
+            new THREE.MeshBasicMaterial({ color: '#fbbf24', depthTest: false })
+          );
+          bar1.position.z = H + 0.12;
+          const bar2 = new THREE.Mesh(
+            new THREE.BoxGeometry(1.7, 4.8, 0.16),
+            new THREE.MeshBasicMaterial({ color: '#fbbf24', depthTest: false })
+          );
+          bar2.position.z = H + 0.12;
+          ghostCubeGroup.add(bar1, bar2);
+        } else {
+          const dotGeo = new THREE.CircleGeometry(1.8, 24);
+          const dotMesh = new THREE.Mesh(
+            dotGeo,
+            new THREE.MeshBasicMaterial({ color: '#e2e8f0', side: THREE.DoubleSide, depthTest: false })
+          );
+          dotMesh.position.z = H + 0.12;
+          ghostCubeGroup.add(dotMesh);
+        }
+      }
+
+      function updateSectorGeometry(relAngleDeg) {
+        if (!sectorMesh) return;
+        const rad = (relAngleDeg * Math.PI) / 180;
+        const radius = 14.2;
+        const steps = Math.max(4, Math.ceil(Math.abs(relAngleDeg) / 4));
+        const verts = [];
+
+        if (Math.abs(relAngleDeg) > 0.2) {
+          for (let i = 0; i < steps; i++) {
+            const a0 = (i / steps) * rad;
+            const a1 = ((i + 1) / steps) * rad;
+            verts.push(
+              0, 0, 0.03,
+              Math.cos(a0) * radius, Math.sin(a0) * radius, 0.03,
+              Math.cos(a1) * radius, Math.sin(a1) * radius, 0.03
+            );
+          }
+        }
+        sectorMesh.geometry.dispose();
+        sectorMesh.geometry = new THREE.BufferGeometry();
+        sectorMesh.geometry.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+      }
+
+      function hidePreviewHelpers() {
+        appState.cubes.ghost.visible = false;
+        if (protractorGroup) protractorGroup.visible = false;
+        if (ghostCubeGroup) ghostCubeGroup.visible = false;
+        if (ghostArmMesh) ghostArmMesh.visible = false;
+      }
+
+      function syncEditor3dHelpers() {
+        if (!editor3dGroup) return;
+
+        // Limpiar hitboxes anteriores
+        for (const m of cubeHitMeshes) {
+          editor3dGroup.remove(m);
+          m.geometry.dispose();
+          m.material.dispose();
+        }
+        cubeHitMeshes = [];
+
+        const isCubesMode = appState.mode === 'cubes';
+        const editingActive = isCubesMode && appState.cubes.is3DEditingActive;
+        editor3dGroup.visible = isCubesMode;
+
+        const toolbar = document.getElementById('editor3dToolbar');
+        if (toolbar) toolbar.classList.toggle('hidden', !editingActive);
+
+        const pausedBanner = document.getElementById('editPausedBanner');
+        if (pausedBanner) pausedBanner.classList.toggle('hidden', !(isCubesMode && !appState.cubes.is3DEditingActive));
+
+        if (!isCubesMode) {
+          const overlay = document.getElementById('viewportLabelsOverlay');
+          if (overlay) overlay.innerHTML = '';
+          return;
+        }
+
+        const layout = computeCubesLayout();
+        const H = appState.thickness;
+
+        // Hitboxes exactos en coordenadas fijas de mundo
+        const baseHitGeo = new THREE.BoxGeometry(LEGO.BEAM_WIDTH, LEGO.BEAM_WIDTH, H + 0.6);
+        for (const c of layout.items) {
+          const hitMesh = new THREE.Mesh(baseHitGeo.clone(), new THREE.MeshBasicMaterial({ visible: false }));
+          hitMesh.position.set(c.x, c.y, H / 2);
+          hitMesh.userData = { cubeId: c.id };
+          editor3dGroup.add(hitMesh);
+          cubeHitMeshes.push(hitMesh);
+        }
+        baseHitGeo.dispose();
+
+        if (editingActive && layout.activeAnchor) {
+          anchorBeaconGroup.visible = true;
+          anchorBeaconGroup.position.set(layout.activeAnchor.x, layout.activeAnchor.y, H + 0.16);
+        } else {
+          anchorBeaconGroup.visible = false;
+        }
+
+        if (!editingActive) {
+          appState.cubes.hoveredCubeId = null;
+          if (hoverCubeRing) hoverCubeRing.visible = false;
+          hidePreviewHelpers();
+        }
+
+        rebuildGhostCubeVisual();
+      }
+
+      function setupViewportInteraction() {
+        const dom = renderer.domElement;
+        const raycaster = new THREE.Raycaster();
+        const mouseNdc = new THREE.Vector2();
+        let pointerDownState = null;
+
+        // Evitar menú contextual del navegador para usar clic derecho en la ventana 3D
+        dom.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+        });
+
+        function updateNdc(e) {
+          const rect = dom.getBoundingClientRect();
+          mouseNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          mouseNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        }
+
+        dom.addEventListener('pointerdown', (e) => {
+          pointerDownState = { x: e.clientX, y: e.clientY, button: e.button };
+        });
+
+        dom.addEventListener('pointermove', (e) => {
+          if (appState.mode !== 'cubes') return;
+
+          if (!appState.cubes.is3DEditingActive) {
+            appState.cubes.hoveredCubeId = null;
+            if (hoverCubeRing) hoverCubeRing.visible = false;
+            hidePreviewHelpers();
+            dom.style.cursor = 'grab';
+            return;
+          }
+
+          updateNdc(e);
+          raycaster.setFromCamera(mouseNdc, camera);
+
+          const layout = computeCubesLayout();
+          const H = appState.thickness;
+
+          // Comprobar hover sobre cubos existentes
+          const cubeHits = raycaster.intersectObjects(cubeHitMeshes, false);
+          if (cubeHits.length > 0) {
+            const hitId = cubeHits[0].object.userData.cubeId;
+            const hitCube = layout.byId.get(hitId);
+            appState.cubes.hoveredCubeId = hitId;
+
+            if (hitCube && hoverCubeRing) {
+              hoverCubeRing.visible = true;
+              hoverCubeRing.position.set(hitCube.x, hitCube.y, H + 0.14);
+              hoverCubeRing.rotation.z = hitCube.absAngleRad;
+            }
+            hidePreviewHelpers();
+            dom.style.cursor = 'pointer';
+            return;
+          }
+
+          appState.cubes.hoveredCubeId = null;
+          if (hoverCubeRing) hoverCubeRing.visible = false;
+
+          // En modo inteligente, proyectar sobre cama Z = 0 para mostrar transportador y cubo fantasma
+          if (appState.cubes.tool !== 'smart' || !layout.activeAnchor) {
+            hidePreviewHelpers();
+            dom.style.cursor = 'default';
+            return;
+          }
+
+          const bedHits = raycaster.intersectObject(bedHitPlane, false);
+          if (bedHits.length === 0) {
+            hidePreviewHelpers();
+            return;
+          }
+
+          const pt = bedHits[0].point;
+          const anchor = layout.activeAnchor;
+          const dx = pt.x - anchor.x;
+          const dy = pt.y - anchor.y;
+          const rawDistMm = Math.hypot(dx, dy);
+
+          if (rawDistMm < 2.0) {
+            hidePreviewHelpers();
+            return;
+          }
+
+          const rawAbsRad = Math.atan2(dy, dx);
+          const rawRelDeg = normalizeAngleDeg(((rawAbsRad - anchor.absAngleRad) * 180) / Math.PI);
+          const snapDeg = appState.cubes.angleSnapDeg || 15;
+          const snappedRelDeg = normalizeAngleDeg(Math.round(rawRelDeg / snapDeg) * snapDeg);
+
+          const snappedAbsRad = anchor.absAngleRad + (snappedRelDeg * Math.PI) / 180;
+          const stepM = appState.cubes.distSnapM || 1.0;
+          const distMm = stepM * LEGO.PITCH_1M;
+
+          const gx = anchor.x + Math.cos(snappedAbsRad) * distMm;
+          const gy = anchor.y + Math.sin(snappedAbsRad) * distMm;
+
+          appState.cubes.ghost = {
+            visible: true,
+            x: gx,
+            y: gy,
+            relAngleDeg: snappedRelDeg,
+            absAngleDeg: normalizeAngleDeg((snappedAbsRad * 180) / Math.PI),
+            distanceM: stepM,
+          };
+
+          // Posicionar transportador angular 3D centrado en el Punto de Inclusión
+          protractorGroup.visible = true;
+          protractorGroup.position.set(anchor.x, anchor.y, H + 0.08);
+          protractorGroup.rotation.z = anchor.absAngleRad;
+          updateSectorGeometry(snappedRelDeg);
+
+          // Posicionar cubo fantasma y brazo de unión
+          ghostCubeGroup.visible = true;
+          ghostCubeGroup.position.set(gx, gy, 0);
+          ghostCubeGroup.rotation.z = snappedAbsRad;
+
+          ghostArmMesh.visible = true;
+          ghostArmMesh.scale.set(distMm, 1, H / LEGO.BEAM_HEIGHT);
+          ghostArmMesh.position.set((anchor.x + gx) / 2, (anchor.y + gy) / 2, H / 2);
+          ghostArmMesh.rotation.z = snappedAbsRad;
+
+          dom.style.cursor = 'crosshair';
+        });
+
+        dom.addEventListener('pointerup', (e) => {
+          if (appState.mode !== 'cubes' || !pointerDownState) return;
+          const distPx = Math.hypot(e.clientX - pointerDownState.x, e.clientY - pointerDownState.y);
+          const btn = pointerDownState.button;
+          pointerDownState = null;
+
+          // Distinguir clic (< 6 px) vs arrastre de cámara OrbitControls (>= 6 px)
+          if (distPx >= 6) return;
+
+          // Clic derecho en ventana 3D: desactivar edición y dejar solo la pieza 3D para rotar
+          if (btn === 2 && e.button === 2) {
+            if (appState.cubes.is3DEditingActive) {
+              appState.cubes.is3DEditingActive = false;
+              appState.cubes.hoveredCubeId = null;
+              if (hoverCubeRing) hoverCubeRing.visible = false;
+              hidePreviewHelpers();
+              dom.style.cursor = 'grab';
+              syncEditor3dHelpers();
+              update3dProjectedLabels();
+              showToast('Edición 3D pausada', 'Solo rotación activa. Haz clic izquierdo sobre la pieza para volver a editar.');
+            }
+            return;
+          }
+
+          if (btn !== 0 || e.button !== 0) return;
+
+          // Si la edición 3D está pausada, solo reactivar al hacer clic izquierdo sobre la pieza 3D
+          if (!appState.cubes.is3DEditingActive) {
+            updateNdc(e);
+            raycaster.setFromCamera(mouseNdc, camera);
+            const cubeHits = raycaster.intersectObjects(cubeHitMeshes, false);
+            const partHits = partMesh ? raycaster.intersectObject(partMesh, false) : [];
+
+            if (cubeHits.length > 0 || partHits.length > 0) {
+              appState.cubes.is3DEditingActive = true;
+              if (cubeHits.length > 0) {
+                appState.cubes.activeAnchorId = cubeHits[0].object.userData.cubeId;
+              }
+              dom.style.cursor = 'pointer';
+              syncAllUI();
+              syncEditor3dHelpers();
+              update3dProjectedLabels();
+              showToast('Edición 3D reactivada', `Punto de inclusión activo: ⚓ C${appState.cubes.activeAnchorId}`);
+            }
+            return;
+          }
+
+          const layout = computeCubesLayout();
+
+          // Clic izquierdo sobre un cubo existente
+          if (appState.cubes.hoveredCubeId !== null) {
+            const targetId = appState.cubes.hoveredCubeId;
+            const targetItem = appState.cubes.items.find((c) => c.id === targetId);
+            if (!targetItem) return;
+
+            if (appState.cubes.tool === 'smart' || appState.cubes.tool === 'toggleHole') {
+              pushCubesHistory();
+              targetItem.holeType = targetItem.holeType === 'pin'
+                ? 'axle'
+                : (targetItem.holeType === 'axle' ? 'solid' : 'pin');
+              appState.partName = 'Pieza_Cubos_Technic';
+              syncAllUI();
+              rebuildSceneGeometry();
+              const labelMap = { pin: 'Pin (O)', axle: 'Cruz (+)', solid: 'Sólido (●)' };
+              showToast(`Cubo C${targetId}: ${labelMap[targetItem.holeType]}`, 'Geometría 3D actualizada al instante.');
+            } else if (appState.cubes.tool === 'anchor') {
+              appState.cubes.activeAnchorId = targetId;
+              syncAllUI();
+              syncEditor3dHelpers();
+              showToast(`Punto de inclusión: ⚓ C${targetId}`, 'Los nuevos cubos medirán su ángulo respecto a este nodo.');
+            } else if (appState.cubes.tool === 'delete') {
+              deleteCubeById(targetId);
+            }
+            return;
+          }
+
+          // Clic izquierdo en cama Z = 0 en modo inteligente -> añadir cubo
+          if (appState.cubes.tool === 'smart' && appState.cubes.ghost.visible && layout.activeAnchor) {
+            addCubeFromActiveAnchor(
+              appState.cubes.ghost.distanceM,
+              appState.cubes.ghost.relAngleDeg,
+              appState.cubes.insertHoleType
+            );
+          }
+        });
+      }
+
+      function addCubeFromActiveAnchor(distanceM, angleDeg, holeType = 'pin') {
+        const layout = computeCubesLayout();
+        const anchor = layout.activeAnchor;
+        if (!anchor) return;
+
+        pushCubesHistory();
+        const nextId = appState.cubes.items.reduce((maxId, c) => Math.max(maxId, c.id), 0) + 1;
+
+        appState.cubes.items.push({
+          id: nextId,
+          parentId: anchor.id,
+          distanceM: distanceM,
+          angleDeg: normalizeAngleDeg(angleDeg),
+          holeType: holeType,
+          axleOrientation: 'aligned',
+        });
+        appState.cubes.activeAnchorId = nextId;
+        appState.partName = 'Pieza_Cubos_Technic';
+
+        syncAllUI();
+        rebuildSceneGeometry();
+        showToast(
+          `Cubo C${nextId} añadido (${formatSignedAngle(angleDeg)})`,
+          `Distancia ${distanceM}M desde C${anchor.id} • Nuevo punto de inclusión: ⚓ C${nextId}`
+        );
+      }
+
+      function deleteCubeById(targetId) {
+        if (appState.cubes.items.length <= 1) {
+          showToast('Cubo raíz protegido', 'Debe existir al menos 1 cubo base C1.', 'error');
+          return;
+        }
+        const idx = appState.cubes.items.findIndex((c) => c.id === targetId);
+        if (idx === -1) return;
+
+        pushCubesHistory();
+        const target = appState.cubes.items[idx];
+
+        if (target.parentId === null) {
+          // Promover el siguiente cubo a raíz
+          appState.cubes.items.splice(idx, 1);
+          appState.cubes.items[0].parentId = null;
+          appState.cubes.items[0].distanceM = 0;
+          appState.cubes.items[0].angleDeg = 0;
+        } else {
+          // Re-enlazar hijos al padre del cubo eliminado
+          for (const c of appState.cubes.items) {
+            if (c.parentId === targetId) {
+              c.parentId = target.parentId;
+            }
+          }
+          appState.cubes.items.splice(idx, 1);
+        }
+
+        if (appState.cubes.activeAnchorId === targetId) {
+          appState.cubes.activeAnchorId = appState.cubes.items[appState.cubes.items.length - 1].id;
+        }
+        appState.partName = 'Pieza_Cubos_Technic';
+        syncAllUI();
+        rebuildSceneGeometry();
+        showToast(`Cubo C${targetId} eliminado`, `Quedan ${appState.cubes.items.length} cubos.`);
+      }
+
+      // =========================================================================
+      // ETIQUETAS ANGULARES PROYECTADAS EN TIEMPO REAL SOBRE EL VISOR 3D
+      // =========================================================================
+      function projectWorldToScreen(x, y, z) {
+        const vec = new THREE.Vector3(x, y, z);
+        vec.project(camera);
+        if (vec.z > 1) return null;
+        const rect = renderer.domElement.getBoundingClientRect();
+        return {
+          x: ((vec.x + 1) * 0.5) * rect.width,
+          y: ((-vec.y + 1) * 0.5) * rect.height,
+        };
+      }
+
+      function update3dProjectedLabels() {
+        const overlay = document.getElementById('viewportLabelsOverlay');
+        if (!overlay) return;
+
+        if (appState.mode !== 'cubes' || !appState.cubes.is3DEditingActive || !camera || !renderer) {
+          if (overlay.innerHTML !== '') overlay.innerHTML = '';
+          return;
+        }
+
+        const layout = computeCubesLayout();
+        const H = appState.thickness;
+        let html = '';
+
+        // 1. Etiquetas por cubo colocado (si Etiquetas 3D está ON)
+        if (appState.cubes.show3dLabels) {
+          for (const c of layout.items) {
+            const pos = projectWorldToScreen(c.x, c.y, H + 1.1);
+            if (!pos) continue;
+
+            const isAnchor = c.id === appState.cubes.activeAnchorId;
+            const holeGlyph = c.holeType === 'pin' ? 'O' : (c.holeType === 'axle' ? '+' : '●');
+            const holeColor = c.holeType === 'pin' ? 'text-sky-300' : (c.holeType === 'axle' ? 'text-amber-300' : 'text-slate-300');
+            const borderCol = isAnchor ? 'border-cyan-400 bg-cyan-950/90' : 'border-slate-700/90 bg-slate-950/85';
+            const angText = c.parentId === null ? '0°' : formatSignedAngle(c.angleDeg);
+
+            html += `
+              <div class="hud-3d-tag px-1.5 py-0.5 rounded-md border ${borderCol} text-[10px] font-mono shadow-lg flex items-center gap-1"
+                   style="left:${pos.x.toFixed(1)}px; top:${pos.y.toFixed(1)}px;">
+                <span class="font-bold ${isAnchor ? 'text-cyan-300' : 'text-white'}">${isAnchor ? '⚓' : ''}C${c.id}</span>
+                <span class="${holeColor} font-bold">${holeGlyph}</span>
+                <span class="text-orange-300">${angText}</span>
+              </div>
+            `;
+          }
+        }
+
+        // 2. Cota HUD en vivo del cubo fantasma
+        const g = appState.cubes.ghost;
+        if (g.visible && layout.activeAnchor) {
+          const gPos = projectWorldToScreen(g.x, g.y, H + 2.2);
+          if (gPos) {
+            html += `
+              <div class="hud-3d-tag px-2.5 py-1 rounded-xl border border-orange-400 bg-slate-950/95 text-[11px] font-mono shadow-2xl"
+                   style="left:${gPos.x.toFixed(1)}px; top:${gPos.y.toFixed(1)}px;">
+                <div class="font-bold text-orange-400">∠ ${formatSignedAngle(g.relAngleDeg)} respecto a C${layout.activeAnchor.id}</div>
+                <div class="text-[10px] text-slate-300">Abs: ${formatSignedAngle(g.absAngleDeg)} • Dist: ${g.distanceM}M (${(g.distanceM * 8).toFixed(1)}mm)</div>
+              </div>
+            `;
+          }
+        }
+
+        overlay.innerHTML = html;
+      }
+
+      // =========================================================================
+      // RECONSTRUCCIÓN DE GEOMETRÍA 3D EN LA ESCENA
+      // =========================================================================
+      function rebuildSceneGeometry() {
+        if (!scene) return;
+
+        if (partMesh) {
+          scene.remove(partMesh);
+          partMesh.geometry.dispose();
+          partMesh.material.dispose();
+          partMesh = null;
+        }
+        if (edgesLines) {
+          scene.remove(edgesLines);
+          edgesLines.geometry.dispose();
+          edgesLines.material.dispose();
+          edgesLines = null;
+        }
+
+        currentGeometry = buildSupportFreeGeometry();
+
+        // En Modo 2 y Modo 3 centramos en XY; en Modo 1 (Cubos) mantenemos coordenadas fijas
+        // de mundo con C1 en (0, 0) para que el raycasting 3D sea 100% exacto.
+        if (appState.mode !== 'cubes') {
+          currentGeometry.computeBoundingBox();
+          const bb = currentGeometry.boundingBox;
+          const centerX = (bb.min.x + bb.max.x) / 2;
+          const centerY = (bb.min.y + bb.max.y) / 2;
+          currentGeometry.translate(-centerX, -centerY, 0);
+        }
+
+        const material = new THREE.MeshStandardMaterial({
+          color: appState.filamentColor,
+          roughness: 0.36,
+          metalness: 0.06,
+          wireframe: appState.wireframe,
+          transparent: appState.xray,
+          opacity: appState.xray ? 0.58 : 1.0,
+          side: THREE.DoubleSide,
+        });
+
+        partMesh = new THREE.Mesh(currentGeometry, material);
+        partMesh.castShadow = true;
+        partMesh.receiveShadow = true;
+        scene.add(partMesh);
+
+        if (!appState.wireframe) {
+          const edgesGeo = new THREE.EdgesGeometry(currentGeometry, 28);
+          const edgesMat = new THREE.LineBasicMaterial({
+            color: appState.filamentColor === '#1E2024' ? '#64748b' : '#0f172a',
+            transparent: true,
+            opacity: 0.45,
+          });
+          edgesLines = new THREE.LineSegments(edgesGeo, edgesMat);
+          partMesh.add(edgesLines);
+        }
+
+        syncEditor3dHelpers();
+        updateMetricsHUD();
+      }
+
+      function setCameraPreset(preset) {
+        if (!camera || !controls) return;
+        let targetX = 0, targetY = 0;
+
+        if (appState.mode === 'cubes') {
+          const layout = computeCubesLayout();
+          if (layout.items.length > 0) {
+            let sx = 0, sy = 0;
+            for (const c of layout.items) { sx += c.x; sy += c.y; }
+            targetX = sx / layout.items.length;
+            targetY = sy / layout.items.length;
+          }
+        }
+
+        const maxDim = Math.max(appState.metrics.dimX, appState.metrics.dimY, 36);
+        const dist = maxDim * 1.65 + 25;
+
+        controls.target.set(targetX, targetY, appState.thickness * 0.4);
+        if (preset === 'iso') {
+          camera.position.set(targetX + dist * 0.65, targetY - dist * 0.82, dist * 0.68);
+        } else if (preset === 'top') {
+          camera.position.set(targetX, targetY - 0.01, dist * 1.25);
+        } else if (preset === 'bottom') {
+          camera.position.set(targetX, targetY - 0.01, -dist * 1.2);
+        } else if (preset === 'front') {
+          camera.position.set(targetX, targetY - dist * 1.25, appState.thickness * 0.5);
+        }
+        controls.update();
+      }
+
+      // =========================================================================
+      // EXPORTADOR DE ARCHIVO .STL BINARIO REAL (84B HEADER + 50B / TRIÁNGULO)
+      // =========================================================================
+      function exportBinarySTL() {
+        if (!currentGeometry) {
+          showToast('Error al exportar', 'No hay geometría generada.', 'error');
+          return;
+        }
+
+        // Clonar geometría y centrarla en XY sobre Z = 0 para que caiga en el centro de la cama del slicer
+        const exportGeo = currentGeometry.clone();
+        exportGeo.computeBoundingBox();
+        const bb = exportGeo.boundingBox;
+        exportGeo.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -bb.min.z);
+
+        const posAttr = exportGeo.getAttribute('position');
+        const triCount = posAttr.count / 3;
+        const bufferLength = 84 + triCount * 50;
+        const arrayBuffer = new ArrayBuffer(bufferLength);
+        const view = new DataView(arrayBuffer);
+
+        const headerStr = `TechnicForge 3D Support-Free LEGO Technic Part (${triCount} tris)`;
+        for (let i = 0; i < 80; i++) {
+          view.setUint8(i, i < headerStr.length ? headerStr.charCodeAt(i) : 32);
+        }
+
+        view.setUint32(80, triCount, true);
+
+        let offset = 84;
+        const vA = new THREE.Vector3();
+        const vB = new THREE.Vector3();
+        const vC = new THREE.Vector3();
+        const cb = new THREE.Vector3();
+        const ab = new THREE.Vector3();
+
+        for (let i = 0; i < triCount; i++) {
+          const idx = i * 3;
+          vA.fromBufferAttribute(posAttr, idx);
+          vB.fromBufferAttribute(posAttr, idx + 1);
+          vC.fromBufferAttribute(posAttr, idx + 2);
+
+          cb.subVectors(vC, vB);
+          ab.subVectors(vA, vB);
+          cb.cross(ab).normalize();
+
+          view.setFloat32(offset, cb.x, true);
+          view.setFloat32(offset + 4, cb.y, true);
+          view.setFloat32(offset + 8, cb.z, true);
+
+          view.setFloat32(offset + 12, vA.x, true);
+          view.setFloat32(offset + 16, vA.y, true);
+          view.setFloat32(offset + 20, vA.z, true);
+
+          view.setFloat32(offset + 24, vB.x, true);
+          view.setFloat32(offset + 28, vB.y, true);
+          view.setFloat32(offset + 32, vB.z, true);
+
+          view.setFloat32(offset + 36, vC.x, true);
+          view.setFloat32(offset + 40, vC.y, true);
+          view.setFloat32(offset + 44, vC.z, true);
+
+          view.setUint16(offset + 48, 0, true);
+          offset += 50;
+        }
+
+        exportGeo.dispose();
+
+        const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const safeName = appState.partName.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const fileName = `TechnicForge_${safeName}_SinSoportes.stl`;
+
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+        const kbSize = (bufferLength / 1024).toFixed(1);
+        showToast(
+          `STL descargado: ${fileName}`,
+          `${triCount.toLocaleString('es-ES')} triángulos manifold • ${kbSize} KB • Listo para laminar sin soportes.`
+        );
+      }
+
+      // =========================================================================
+      // RENDERIZADO LISTA DE CUBOS EN EL PANEL IZQUIERDO (MODO 1)
+      // =========================================================================
+      function renderCubesList() {
+        const container = document.getElementById('cubesListContainer');
+        if (!container) return;
+
+        const layout = computeCubesLayout();
+        document.getElementById('cubesCountBadge').textContent =
+          `${layout.items.length} ${layout.items.length === 1 ? 'cubo' : 'cubos'}`;
+        document.getElementById('activeAnchorBadge').textContent =
+          layout.activeAnchor ? `⚓ C${layout.activeAnchor.id}` : '⚓ C1';
+
+        const quickAngles = [-90, -45, 0, 15, 22.5, 45, 60, 90];
+
+        container.innerHTML = layout.items.map((cube) => {
+          const isAnchor = cube.id === appState.cubes.activeAnchorId;
+          const isRoot = cube.parentId === null;
+
+          const angleButtons = isRoot ? '' : quickAngles.map((ang) => {
+            const active = Math.abs(cube.angleDeg - ang) < 0.05;
+            return `<button type="button" data-cube-id="${cube.id}" data-angle="${ang}"
+              class="cube-quick-ang px-1.5 py-0.5 rounded text-[10px] font-mono border transition cursor-pointer ${
+                active
+                  ? 'bg-orange-500 text-white border-orange-400 font-semibold'
+                  : 'bg-slate-950 text-slate-400 border-slate-700 hover:text-white'
+              }">${ang > 0 ? '+' + ang : ang}°</button>`;
+          }).join('');
+
+          return `
+            <div class="rounded-xl p-2.5 border transition ${
+              isAnchor
+                ? 'bg-cyan-950/30 border-cyan-500/60 shadow-md shadow-cyan-500/10'
+                : 'bg-slate-900/90 border-slate-800'
+            }">
+              <div class="flex flex-wrap items-center justify-between gap-1.5">
+                <div class="flex items-center gap-1.5">
+                  <button type="button" data-cube-id="${cube.id}" title="Fijar como Punto de Inclusión activo"
+                    class="cube-set-anchor px-2 py-0.5 rounded-lg font-mono text-[11px] font-bold transition cursor-pointer ${
+                      isAnchor
+                        ? 'bg-cyan-500 text-slate-950'
+                        : 'bg-slate-800 text-slate-300 hover:bg-cyan-500/20 hover:text-cyan-300'
+                    }">
+                    ${isAnchor ? '⚓ ' : ''}C${cube.id}
+                  </button>
+                  <span class="text-[11px] text-slate-400 font-mono">
+                    ${isRoot ? 'Base origen (0, 0)' : `desde C${cube.parentId} • ${cube.distanceM}M`}
+                  </span>
+                </div>
+
+                <!-- Selector rápido de perforación Pin (O) / Cruz (+) / Sólido (●) -->
+                <div class="flex items-center gap-1">
+                  <button type="button" data-cube-id="${cube.id}" data-hole="pin"
+                    class="cube-hole-btn px-2 py-0.5 rounded text-[10px] font-mono font-semibold cursor-pointer ${
+                      cube.holeType === 'pin'
+                        ? 'bg-sky-500/25 text-sky-300 border border-sky-500/50'
+                        : 'bg-slate-950 text-slate-500 border border-slate-800 hover:text-slate-300'
+                    }">O</button>
+                  <button type="button" data-cube-id="${cube.id}" data-hole="axle"
+                    class="cube-hole-btn px-2 py-0.5 rounded text-[10px] font-mono font-semibold cursor-pointer ${
+                      cube.holeType === 'axle'
+                        ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50'
+                        : 'bg-slate-950 text-slate-500 border border-slate-800 hover:text-slate-300'
+                    }">+</button>
+                  <button type="button" data-cube-id="${cube.id}" data-hole="solid"
+                    class="cube-hole-btn px-2 py-0.5 rounded text-[10px] font-mono font-semibold cursor-pointer ${
+                      cube.holeType === 'solid'
+                        ? 'bg-slate-600/40 text-white border border-slate-500'
+                        : 'bg-slate-950 text-slate-500 border border-slate-800 hover:text-slate-300'
+                    }">●</button>
+                  ${!isRoot ? `
+                    <button type="button" data-cube-id="${cube.id}" title="Eliminar cubo"
+                      class="cube-del-btn ml-1 text-slate-500 hover:text-rose-400 p-1 rounded cursor-pointer">
+                      ✕
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+
+              ${!isRoot ? `
+                <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-1.5">
+                  <div class="flex items-center justify-between text-[11px]">
+                    <span class="text-slate-400">Ángulo respecto a C${cube.parentId}:</span>
+                    <div class="flex items-center gap-1">
+                      <input type="number" min="-180" max="180" step="0.5" value="${cube.angleDeg}" data-cube-id="${cube.id}"
+                        class="cube-angle-input w-16 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-[11px] text-orange-400 focus:outline-none" />
+                      <span class="font-mono text-slate-400">°</span>
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap gap-1">
+                    ${angleButtons}
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        }).join('');
+
+        // Enlazar eventos de tarjetas de cubos
+        container.querySelectorAll('.cube-set-anchor').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            appState.cubes.activeAnchorId = Number(btn.dataset.cubeId);
+            appState.cubes.is3DEditingActive = true;
+            renderCubesList();
+            syncEditor3dHelpers();
+          });
+        });
+
+        container.querySelectorAll('.cube-hole-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const id = Number(btn.dataset.cubeId);
+            const item = appState.cubes.items.find((c) => c.id === id);
+            if (!item) return;
+            pushCubesHistory();
+            item.holeType = btn.dataset.hole;
+            appState.partName = 'Pieza_Cubos_Technic';
+            renderCubesList();
+            rebuildSceneGeometry();
+          });
+        });
+
+        container.querySelectorAll('.cube-quick-ang').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const id = Number(btn.dataset.cubeId);
+            const item = appState.cubes.items.find((c) => c.id === id);
+            if (!item) return;
+            pushCubesHistory();
+            item.angleDeg = parseFloat(btn.dataset.angle);
+            appState.partName = 'Pieza_Cubos_Technic';
+            renderCubesList();
+            rebuildSceneGeometry();
+          });
+        });
+
+        container.querySelectorAll('.cube-angle-input').forEach((inp) => {
+          inp.addEventListener('change', () => {
+            const id = Number(inp.dataset.cubeId);
+            const item = appState.cubes.items.find((c) => c.id === id);
+            if (!item) return;
+            pushCubesHistory();
+            item.angleDeg = normalizeAngleDeg(parseFloat(inp.value) || 0);
+            appState.partName = 'Pieza_Cubos_Technic';
+            renderCubesList();
+            rebuildSceneGeometry();
+          });
+        });
+
+        container.querySelectorAll('.cube-del-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            deleteCubeById(Number(btn.dataset.cubeId));
+          });
+        });
+      }
+
+      // =========================================================================
+      // RENDERIZADO Y EVENTOS MODO 2: VIGA MULTI-SEGMENTO
+      // =========================================================================
+      function renderBeamSvgEditor() {
+        const svg = document.getElementById('beamSvgEditor');
+        if (!svg) return;
+
+        const layout = computeBeamLayout();
+        const radius = appState.beam.armWidth / 2;
+
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const n of layout.nodes) {
+          minX = Math.min(minX, n.x - radius);
+          maxX = Math.max(maxX, n.x + radius);
+          minY = Math.min(minY, n.y - radius);
+          maxY = Math.max(maxY, n.y + radius);
+        }
+        if (!isFinite(minX)) {
+          minX = -10; maxX = 10; minY = -10; maxY = 10;
+        }
+
+        const pad = 7.5;
+        const vbX = minX - pad;
+        const vbY = -(maxY + pad);
+        const vbW = Math.max(24, (maxX - minX) + pad * 2);
+        const vbH = Math.max(20, (maxY - minY) + pad * 2);
+
+        svg.setAttribute('viewBox', `${vbX.toFixed(2)} ${vbY.toFixed(2)} ${vbW.toFixed(2)} ${vbH.toFixed(2)}`);
+
+        let html = '';
+
+        for (const seg of layout.segments) {
+          html += `
+            <line x1="${seg.x1}" y1="${-seg.y1}" x2="${seg.x2}" y2="${-seg.y2}"
+              stroke="#1e293b" stroke-width="${appState.beam.armWidth}" stroke-linecap="round" />
+            <line x1="${seg.x1}" y1="${-seg.y1}" x2="${seg.x2}" y2="${-seg.y2}"
+              stroke="#38bdf8" stroke-opacity="0.35" stroke-width="${appState.beam.armWidth}" stroke-linecap="round" />
+          `;
+        }
+
+        for (const node of layout.nodes) {
+          html += `
+            <text x="${node.x}" y="${-node.y - radius - 1.2}" text-anchor="middle"
+              font-size="2.3" font-family="JetBrains Mono, monospace" fill="#94a3b8" pointer-events="none">
+              N${node.id}
+            </text>
+          `;
+        }
+
+        const pinR = (LEGO.PIN_BASE_DIA + appState.pinClearance) / 2;
+        const cbR = (LEGO.COUNTERBORE_DIA + appState.pinClearance) / 2;
+
+        for (const hole of layout.holes) {
+          const sy = -hole.y;
+          html += `<g class="beam-hole-node cursor-pointer" data-hole-key="${hole.key}">`;
+          html += `<circle cx="${hole.x}" cy="${sy}" r="3.9" fill="transparent" />`;
+
+          if (hole.type === 'pin') {
+            html += `
+              <circle cx="${hole.x}" cy="${sy}" r="${cbR.toFixed(2)}" fill="#0f172a" stroke="#38bdf8" stroke-width="0.35" stroke-dasharray="0.8 0.5" />
+              <circle cx="${hole.x}" cy="${sy}" r="${pinR.toFixed(2)}" fill="#090d16" stroke="#38bdf8" stroke-width="0.55" />
+            `;
+          } else if (hole.type === 'axle') {
+            const deg = (-hole.angleRad * 180) / Math.PI;
+            html += `
+              <g transform="translate(${hole.x}, ${sy}) rotate(${deg.toFixed(2)})">
+                <circle cx="0" cy="0" r="2.6" fill="#090d16" stroke="#fb923c" stroke-width="0.35" />
+                <path d="M -2.2 -0.75 H -0.75 V -2.2 H 0.75 V -0.75 H 2.2 V 0.75 H 0.75 V 2.2 H -0.75 V 0.75 H -2.2 Z"
+                  fill="#fb923c" />
+              </g>
+            `;
+          } else {
+            html += `
+              <circle cx="${hole.x}" cy="${sy}" r="2.2" fill="#334155" stroke="#64748b" stroke-width="0.4" stroke-dasharray="0.7 0.5" />
+            `;
+          }
+
+          html += `</g>`;
+        }
+
+        svg.innerHTML = html;
+
+        svg.querySelectorAll('.beam-hole-node').forEach((el) => {
+          el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const key = el.getAttribute('data-hole-key');
+            const curr = appState.beam.holeTypes[key] || 'pin';
+            const next = curr === 'pin' ? 'axle' : (curr === 'axle' ? 'solid' : 'pin');
+            appState.beam.holeTypes[key] = next;
+            appState.partName = 'Viga_Custom_Technic';
+            renderBeamSvgEditor();
+            rebuildSceneGeometry();
+          });
+        });
+
+        const badge = document.getElementById('beamHoleCountBadge');
+        if (badge) badge.textContent = `${layout.holes.length} estaciones`;
+      }
+
+      function renderSegmentsList() {
+        const container = document.getElementById('segmentsListContainer');
+        if (!container) return;
+
+        const quickAngles = [-90, -45, 0, 15, 22.5, 30, 45, 60, 90];
+
+        container.innerHTML = appState.beam.segments.map((seg, idx) => {
+          let nodeOptions = '';
+          for (let n = 0; n <= idx; n++) {
+            nodeOptions += `<option value="${n}" ${seg.fromNode === n ? 'selected' : ''}>Desde Nodo N${n}</option>`;
+          }
+
+          const angleButtons = quickAngles.map((ang) => {
+            const isActive = Math.abs(seg.angleDeg - ang) < 0.05;
+            return `<button type="button" data-seg-idx="${idx}" data-angle="${ang}"
+              class="seg-quick-angle px-1.5 py-0.5 rounded text-[10px] font-mono border transition cursor-pointer ${
+                isActive
+                  ? 'bg-orange-500 text-white border-orange-400 font-semibold'
+                  : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white hover:border-slate-500'
+              }">${ang > 0 ? '+' + ang : ang}°</button>`;
+          }).join('');
+
+          return `
+            <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-mono text-[10px] font-bold">S${idx + 1}</span>
+                  <select data-seg-idx="${idx}" class="seg-from-select bg-slate-800 border border-slate-700 rounded-lg px-2 py-0.5 text-[11px] text-slate-200 focus:outline-none">
+                    ${nodeOptions}
+                  </select>
+                </div>
+                ${appState.beam.segments.length > 1 ? `
+                  <button type="button" data-seg-idx="${idx}" class="seg-del-btn text-slate-500 hover:text-rose-400 p-1 rounded cursor-pointer" title="Eliminar segmento">
+                    ✕
+                  </button>
+                ` : ''}
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between text-[11px] mb-1">
+                  <span class="text-slate-400">Longitud:</span>
+                  <span class="font-mono font-semibold text-white">${seg.lengthM.toFixed(1)}M <span class="text-slate-400">(${(seg.lengthM * 8).toFixed(1)} mm)</span></span>
+                </div>
+                <input type="range" min="0.5" max="15" step="0.5" value="${seg.lengthM}" data-seg-idx="${idx}" class="seg-len-slider cad-slider" />
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between text-[11px] mb-1">
+                  <span class="text-slate-400">Ángulo relativo:</span>
+                  <div class="flex items-center gap-1">
+                    <input type="number" min="-180" max="180" step="0.5" value="${seg.angleDeg}" data-seg-idx="${idx}"
+                      class="seg-angle-input w-16 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-[11px] text-orange-400 focus:outline-none" />
+                    <span class="text-slate-400 font-mono text-[11px]">°</span>
+                  </div>
+                </div>
+                <input type="range" min="-180" max="180" step="1.5" value="${seg.angleDeg}" data-seg-idx="${idx}" class="seg-angle-slider cad-slider" />
+                <div class="flex flex-wrap gap-1 mt-1.5">
+                  ${angleButtons}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        container.querySelectorAll('.seg-from-select').forEach((sel) => {
+          sel.addEventListener('change', () => {
+            const i = Number(sel.dataset.segIdx);
+            appState.beam.segments[i].fromNode = Number(sel.value);
+            appState.partName = 'Viga_Custom_Technic';
+            renderBeamSvgEditor();
+            rebuildSceneGeometry();
+          });
+        });
+
+        container.querySelectorAll('.seg-len-slider').forEach((inp) => {
+          inp.addEventListener('input', () => {
+            const i = Number(inp.dataset.segIdx);
+            appState.beam.segments[i].lengthM = parseFloat(inp.value);
+            appState.partName = 'Viga_Custom_Technic';
+            renderSegmentsList();
+            renderBeamSvgEditor();
+            rebuildSceneGeometry();
+          });
+        });
+
+        container.querySelectorAll('.seg-angle-slider').forEach((inp) => {
+          inp.addEventListener('input', () => {
+            const i = Number(inp.dataset.segIdx);
+            appState.beam.segments[i].angleDeg = parseFloat(inp.value);
+            appState.partName = 'Viga_Custom_Technic';
+            renderSegmentsList();
+            renderBeamSvgEditor();
+            rebuildSceneGeometry();
+          });
+        });
+
+        container.querySelectorAll('.seg-angle-input').forEach((inp) => {
+          inp.addEventListener('change', () => {
+            const i = Number(inp.dataset.segIdx);
+            const val = Math.max(-180, Math.min(180, parseFloat(inp.value) || 0));
+            appState.beam.segments[i].angleDeg = val;
+            appState.partName = 'Viga_Custom_Technic';
+            renderSegmentsList();
+            renderBeamSvgEditor();
+            rebuildSceneGeometry();
+          });
+        });
+
+        container.querySelectorAll('.seg-quick-angle').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const i = Number(btn.dataset.segIdx);
+            appState.beam.segments[i].angleDeg = parseFloat(btn.dataset.angle);
+            appState.partName = 'Viga_Custom_Technic';
+            renderSegmentsList();
+            renderBeamSvgEditor();
+            rebuildSceneGeometry();
+          });
+        });
+
+        container.querySelectorAll('.seg-del-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const i = Number(btn.dataset.segIdx);
+            appState.beam.segments.splice(i, 1);
+            appState.beam.segments.forEach((s, idx2) => {
+              if (s.fromNode > idx2) s.fromNode = idx2;
+            });
+            appState.partName = 'Viga_Custom_Technic';
+            renderSegmentsList();
+            renderBeamSvgEditor();
+            rebuildSceneGeometry();
+          });
+        });
+      }
+
+      // =========================================================================
+      // RENDERIZADO Y EVENTOS MODO 3: MATRIZ / MARCO CUSTOM
+      // =========================================================================
+      let isPaintingGrid = false;
+
+      function ensureGridMatrixSize() {
+        const { cols, rows, cells } = appState.grid;
+        const next = [];
+        for (let r = 0; r < rows; r++) {
+          const row = [];
+          for (let c = 0; c < cols; c++) {
+            row.push((cells[r] && cells[r][c]) || 'empty');
+          }
+          next.push(row);
+        }
+        appState.grid.cells = next;
+      }
+
+      function renderMatrixGrid() {
+        ensureGridMatrixSize();
+        const container = document.getElementById('matrixGridContainer');
+        if (!container) return;
+
+        const { cols, rows, cells } = appState.grid;
+        document.getElementById('gridColsVal').textContent = cols;
+        document.getElementById('gridRowsVal').textContent = rows;
+        document.getElementById('gridStepSelect').value = String(appState.grid.stepM);
+
+        container.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+
+        const cellSizeClass = cols > 9 || rows > 9 ? 'w-6 h-6' : 'w-8 h-8';
+        let html = '';
+
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const state = cells[r][c];
+            let inner = '';
+            let bgClass = 'bg-slate-950/70 border-slate-800 hover:border-slate-600';
+
+            if (state === 'solid') {
+              bgClass = 'bg-slate-600 border-slate-400';
+              inner = `<span class="w-2 h-2 rounded-full bg-slate-300"></span>`;
+            } else if (state === 'pin') {
+              bgClass = 'bg-slate-800 border-sky-500/60';
+              inner = `<span class="w-4 h-4 rounded-full border-2 border-sky-400"></span>`;
+            } else if (state === 'axle') {
+              bgClass = 'bg-slate-800 border-amber-500/60';
+              inner = `<span class="text-amber-400 font-bold text-sm leading-none">+</span>`;
+            }
+
+            html += `
+              <button type="button" data-r="${r}" data-c="${c}"
+                class="matrix-cell ${cellSizeClass} rounded-lg border ${bgClass} flex items-center justify-center transition cursor-pointer">
+                ${inner}
+              </button>
+            `;
+          }
+        }
+
+        container.innerHTML = html;
+
+        const paintCell = (r, c) => {
+          appState.grid.cells[r][c] = appState.grid.brush;
+          appState.partName = `Marco_Custom_${cols}x${rows}`;
+          renderMatrixGrid();
+          rebuildSceneGeometry();
+        };
+
+        container.oncontextmenu = (e) => {
+          e.preventDefault();
+        };
+
+        container.querySelectorAll('.matrix-cell').forEach((btn) => {
+          const r = Number(btn.dataset.r);
+          const c = Number(btn.dataset.c);
+
+          btn.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            if (e.button === 2) {
+              isPaintingGrid = false;
+              paintCell(r, c);
+              return;
+            }
+            if (e.button === 0) {
+              isPaintingGrid = true;
+              paintCell(r, c);
+            }
+          });
+
+          btn.addEventListener('pointerenter', (e) => {
+            if (!isPaintingGrid) return;
+            if (e.pointerType === 'mouse' && (e.buttons & 1) !== 1) {
+              isPaintingGrid = false;
+              return;
+            }
+            paintCell(r, c);
+          });
+        });
+      }
+
+      window.addEventListener('pointerup', () => {
+        isPaintingGrid = false;
+      });
+      window.addEventListener('pointercancel', () => {
+        isPaintingGrid = false;
+      });
+      window.addEventListener('blur', () => {
+        isPaintingGrid = false;
+      });
+
+      // =========================================================================
+      // ACTUALIZACIÓN DE MÉTRICAS HUD Y SINCRONIZACIÓN DE INTERFAZ
+      // =========================================================================
+      function updateMetricsHUD() {
+        const m = appState.metrics;
+        document.getElementById('bedAreaVal').textContent = `${m.bedAreaMm2.toFixed(1)} mm²`;
+        document.getElementById('overhangVal').textContent = appState.bottomType === 'chamfer45' ? '45° (Sin Soportes)' : '0° (Vertical)';
+        document.getElementById('volumeVal').textContent = `${m.volumeCm3.toFixed(2)} cm³`;
+        document.getElementById('weightVal').textContent = `${m.weightGrams.toFixed(1)} g`;
+
+        document.getElementById('dimMmLabel').textContent = `${m.dimX.toFixed(1)} × ${m.dimY.toFixed(1)} × ${m.dimZ.toFixed(1)} mm`;
+        const modX = (m.dimX / LEGO.PITCH_1M).toFixed(1);
+        const modY = (m.dimY / LEGO.PITCH_1M).toFixed(1);
+        const modZ = (m.dimZ / LEGO.BEAM_HEIGHT).toFixed(1);
+        document.getElementById('dimModLabel').textContent = `${modX}M × ${modY}M × ${modZ}M`;
+
+        document.getElementById('holeSummaryLabel').textContent = `${m.pinCount} Pines (O) • ${m.axleCount} Cruces (+)`;
+        document.getElementById('meshStatsLabel').textContent = `${m.triangleCount.toLocaleString('es-ES')} triángulos STL`;
+      }
+
+      function syncAllUI() {
+        const isCubes = appState.mode === 'cubes';
+        const isBeam = appState.mode === 'beam';
+        const isGrid = appState.mode === 'grid';
+
+        document.getElementById('cubesModeSection').classList.toggle('hidden', !isCubes);
+        document.getElementById('beamModeSection').classList.toggle('hidden', !isBeam);
+        document.getElementById('gridModeSection').classList.toggle('hidden', !isGrid);
+
+        const activeTabClass = 'flex items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer bg-orange-500 text-white shadow';
+        const idleTabClass = 'flex items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer text-slate-400 hover:text-white';
+
+        document.getElementById('tabCubesBtn').className = isCubes ? activeTabClass : idleTabClass;
+        document.getElementById('tabBeamBtn').className = isBeam ? activeTabClass : idleTabClass;
+        document.getElementById('tabGridBtn').className = isGrid ? activeTabClass : idleTabClass;
+
+        // Sincronizar selectores de distancia y snap angular (barra flotante y panel izquierdo)
+        document.getElementById('distSnapSelect').value = String(appState.cubes.distSnapM);
+        document.getElementById('sidebarDistStepSelect').value = String(appState.cubes.distSnapM);
+        document.getElementById('angleSnapSelect').value = String(appState.cubes.angleSnapDeg);
+        document.getElementById('sidebarAngleSnapSelect').value = String(appState.cubes.angleSnapDeg);
+
+        // Herramienta 3D activa
+        document.querySelectorAll('.tool3d-btn').forEach((btn) => {
+          const active = btn.dataset.tool3d === appState.cubes.tool;
+          btn.className = active
+            ? 'tool3d-btn px-2 py-1 rounded-lg font-semibold bg-orange-500 text-white shadow transition cursor-pointer'
+            : 'tool3d-btn px-2 py-1 rounded-lg font-medium text-slate-300 hover:text-white transition cursor-pointer';
+        });
+
+        // Tipo de hueco al insertar cubo nuevo
+        document.querySelectorAll('.ins-hole-btn').forEach((btn) => {
+          const active = btn.dataset.insertHole === appState.cubes.insertHoleType;
+          btn.className = active
+            ? 'ins-hole-btn px-2 py-1 rounded-lg font-semibold bg-sky-500/25 text-sky-300 border border-sky-500/40 cursor-pointer'
+            : 'ins-hole-btn px-2 py-1 rounded-lg font-medium text-slate-400 hover:text-white cursor-pointer';
+        });
+
+        // Toggle Etiquetas 3D
+        const lblBtn = document.getElementById('toggle3dLabelsBtn');
+        if (lblBtn) {
+          lblBtn.textContent = `∠ Etiquetas 3D: ${appState.cubes.show3dLabels ? 'ON' : 'OFF'}`;
+          lblBtn.className = appState.cubes.show3dLabels
+            ? 'px-2.5 py-1 rounded-xl font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 transition cursor-pointer'
+            : 'px-2.5 py-1 rounded-xl font-medium bg-slate-800 text-slate-400 border border-slate-700 transition cursor-pointer';
+        }
+
+        // Sliders de calibración
+        document.getElementById('thicknessSlider').value = appState.thickness;
+        document.getElementById('thicknessValLabel').textContent = `${appState.thickness.toFixed(2)} mm`;
+
+        document.getElementById('pinClearanceSlider').value = appState.pinClearance;
+        const pinSign = appState.pinClearance >= 0 ? '+' : '';
+        const pinResultDia = (LEGO.PIN_BASE_DIA + appState.pinClearance).toFixed(2);
+        document.getElementById('pinClearanceLabel').textContent = `${pinSign}${appState.pinClearance.toFixed(2)} mm (Ø ${pinResultDia})`;
+
+        document.getElementById('axleClearanceSlider').value = appState.axleClearance;
+        const axleSign = appState.axleClearance >= 0 ? '+' : '';
+        const axleOut = (LEGO.AXLE_OUTER_DIA + appState.axleClearance).toFixed(2);
+        const axleSlot = (LEGO.AXLE_SLOT_WIDTH + appState.axleClearance).toFixed(2);
+        document.getElementById('axleClearanceLabel').textContent = `${axleSign}${appState.axleClearance.toFixed(2)} mm (${axleOut}/${axleSlot})`;
+
+        document.getElementById('elephantChamferSlider').value = appState.elephantChamfer;
+        document.getElementById('elephantChamferLabel').textContent = `${appState.elephantChamfer.toFixed(2)} mm`;
+
+        const btn45 = document.getElementById('bottomChamfer45Btn');
+        const btnFlat = document.getElementById('bottomFlatBtn');
+        if (appState.bottomType === 'chamfer45') {
+          btn45.className = 'py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-pointer';
+          btnFlat.className = 'py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-900 text-slate-400 border border-slate-700 hover:text-slate-200 cursor-pointer';
+        } else {
+          btnFlat.className = 'py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/40 cursor-pointer';
+          btn45.className = 'py-1.5 px-2 rounded-lg text-[11px] font-medium bg-slate-900 text-slate-400 border border-slate-700 hover:text-slate-200 cursor-pointer';
+        }
+
+        document.getElementById('halfStepHolesToggle').checked = appState.beam.halfStepHoles;
+        document.getElementById('armWidthPreset').value = String(appState.beam.armWidth);
+
+        renderCubesList();
+        renderSegmentsList();
+        renderBeamSvgEditor();
+        renderMatrixGrid();
+      }
+
+      // =========================================================================
+      // ENLACE DE EVENTOS PRINCIPALES DE LA APLICACIÓN
+      // =========================================================================
+      function bindEvents() {
+        // Plantilla predefinida
+        document.getElementById('templateSelect').addEventListener('change', (e) => {
+          applyTemplate(e.target.value);
+          setCameraPreset('iso');
+        });
+
+        // Exportación STL binario
+        document.getElementById('exportStlBtn').addEventListener('click', exportBinarySTL);
+
+        // Pestañas de Modo
+        document.getElementById('tabCubesBtn').addEventListener('click', () => {
+          appState.mode = 'cubes';
+          appState.cubes.is3DEditingActive = true;
+          syncAllUI();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('tabBeamBtn').addEventListener('click', () => {
+          appState.mode = 'beam';
+          syncAllUI();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('tabGridBtn').addEventListener('click', () => {
+          appState.mode = 'grid';
+          if (appState.grid.cells.length === 0) {
+            appState.grid.cols = 5;
+            appState.grid.rows = 5;
+            for (let r = 0; r < 5; r++) {
+              appState.grid.cells[r] = [];
+              for (let c = 0; c < 5; c++) {
+                appState.grid.cells[r][c] = (r === 0 || r === 4 || c === 0 || c === 4) ? 'pin' : 'empty';
+              }
+            }
+          }
+          syncAllUI();
+          rebuildSceneGeometry();
+        });
+
+        // Herramientas de la barra flotante 3D
+        document.querySelectorAll('.tool3d-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            appState.cubes.tool = btn.dataset.tool3d;
+            syncAllUI();
+            syncEditor3dHelpers();
+          });
+        });
+
+        document.querySelectorAll('.ins-hole-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            appState.cubes.insertHoleType = btn.dataset.insertHole;
+            syncAllUI();
+            rebuildGhostCubeVisual();
+          });
+        });
+
+        // Sincronización Paso Modular y Ajuste Angular
+        const setDistStep = (val) => {
+          appState.cubes.distSnapM = parseFloat(val);
+          syncAllUI();
+        };
+        document.getElementById('distSnapSelect').addEventListener('change', (e) => setDistStep(e.target.value));
+        document.getElementById('sidebarDistStepSelect').addEventListener('change', (e) => setDistStep(e.target.value));
+
+        const setAngleSnap = (val) => {
+          appState.cubes.angleSnapDeg = parseFloat(val);
+          syncAllUI();
+        };
+        document.getElementById('angleSnapSelect').addEventListener('change', (e) => setAngleSnap(e.target.value));
+        document.getElementById('sidebarAngleSnapSelect').addEventListener('change', (e) => setAngleSnap(e.target.value));
+
+        // Botones rápidos de inserción de cubos
+        document.querySelectorAll('.quick-add-cube-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            appState.cubes.is3DEditingActive = true;
+            const ang = parseFloat(btn.dataset.quickAddAngle);
+            addCubeFromActiveAnchor(appState.cubes.distSnapM, ang, appState.cubes.insertHoleType);
+          });
+        });
+
+        // Deshacer y Reiniciar (Panel Izquierdo + Barra 3D + Ctrl+Z)
+        const resetCubesScene = () => {
+          pushCubesHistory();
+          appState.cubes.is3DEditingActive = true;
+          appState.cubes.items = [
+            { id: 1, parentId: null, distanceM: 0, angleDeg: 0, holeType: 'pin', axleOrientation: 'aligned' },
+          ];
+          appState.cubes.activeAnchorId = 1;
+          appState.partName = 'Pieza_Cubo_Base';
+          syncAllUI();
+          rebuildSceneGeometry();
+          setCameraPreset('iso');
+          showToast('Escena reiniciada', 'Cubo base C1 anclado en el origen (0, 0).');
+        };
+
+        document.getElementById('undoCubesBtn').addEventListener('click', undoCubesAction);
+        document.getElementById('toolbarUndoBtn').addEventListener('click', undoCubesAction);
+        document.getElementById('clearCubesBtn').addEventListener('click', resetCubesScene);
+        document.getElementById('toolbarResetBtn').addEventListener('click', resetCubesScene);
+
+        document.getElementById('toggle3dLabelsBtn').addEventListener('click', () => {
+          appState.cubes.show3dLabels = !appState.cubes.show3dLabels;
+          syncAllUI();
+        });
+
+        window.addEventListener('keydown', (e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && appState.mode === 'cubes') {
+            e.preventDefault();
+            undoCubesAction();
+          }
+        });
+
+        // Controles Modo 2: Viga Multi-Segmento
+        document.getElementById('addSegmentBtn').addEventListener('click', () => {
+          const nextId = appState.beam.segments.length + 1;
+          appState.beam.segments.push({
+            id: nextId,
+            fromNode: appState.beam.segments.length,
+            lengthM: 2.0,
+            angleDeg: 45,
+          });
+          appState.partName = 'Viga_Custom_Technic';
+          renderSegmentsList();
+          renderBeamSvgEditor();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('addBranchSegmentBtn').addEventListener('click', () => {
+          const nextId = appState.beam.segments.length + 1;
+          const branchNode = appState.beam.segments.length >= 1 ? 1 : 0;
+          appState.beam.segments.push({
+            id: nextId,
+            fromNode: branchNode,
+            lengthM: 2.0,
+            angleDeg: -45,
+          });
+          appState.partName = 'Viga_Ramificada_Technic';
+          renderSegmentsList();
+          renderBeamSvgEditor();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('btnAllPins').addEventListener('click', () => {
+          const layout = computeBeamLayout();
+          layout.holes.forEach((h) => { appState.beam.holeTypes[h.key] = 'pin'; });
+          renderBeamSvgEditor();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('btnEndsAxles').addEventListener('click', () => {
+          const layout = computeBeamLayout();
+          if (layout.holes.length > 0) {
+            appState.beam.holeTypes[layout.holes[0].key] = 'axle';
+            appState.beam.holeTypes[layout.holes[layout.holes.length - 1].key] = 'axle';
+          }
+          renderBeamSvgEditor();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('halfStepHolesToggle').addEventListener('change', (e) => {
+          appState.beam.halfStepHoles = e.target.checked;
+          renderBeamSvgEditor();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('armWidthPreset').addEventListener('change', (e) => {
+          appState.beam.armWidth = parseFloat(e.target.value);
+          renderBeamSvgEditor();
+          rebuildSceneGeometry();
+        });
+
+        // Controles Modo 3: Matriz / Marco Custom
+        document.getElementById('gridColsDec').addEventListener('click', () => {
+          if (appState.grid.cols > 1) {
+            appState.grid.cols--;
+            renderMatrixGrid();
+            rebuildSceneGeometry();
+          }
+        });
+        document.getElementById('gridColsInc').addEventListener('click', () => {
+          if (appState.grid.cols < 15) {
+            appState.grid.cols++;
+            renderMatrixGrid();
+            rebuildSceneGeometry();
+          }
+        });
+        document.getElementById('gridRowsDec').addEventListener('click', () => {
+          if (appState.grid.rows > 1) {
+            appState.grid.rows--;
+            renderMatrixGrid();
+            rebuildSceneGeometry();
+          }
+        });
+        document.getElementById('gridRowsInc').addEventListener('click', () => {
+          if (appState.grid.rows < 15) {
+            appState.grid.rows++;
+            renderMatrixGrid();
+            rebuildSceneGeometry();
+          }
+        });
+        document.getElementById('gridStepSelect').addEventListener('change', (e) => {
+          appState.grid.stepM = parseFloat(e.target.value);
+          rebuildSceneGeometry();
+        });
+
+        document.querySelectorAll('.brush-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            appState.grid.brush = btn.dataset.brush;
+            document.querySelectorAll('.brush-btn').forEach((b) => {
+              const active = b.dataset.brush === appState.grid.brush;
+              b.className = active
+                ? 'brush-btn py-1.5 px-2 rounded-lg text-[11px] font-semibold border-2 border-orange-500 bg-orange-500/15 text-white flex flex-col items-center gap-0.5 cursor-pointer'
+                : 'brush-btn py-1.5 px-2 rounded-lg text-[11px] font-medium border border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500 flex flex-col items-center gap-0.5 cursor-pointer';
+            });
+          });
+        });
+
+        document.getElementById('gridPresetFrameBtn').addEventListener('click', () => {
+          const { cols, rows } = appState.grid;
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              appState.grid.cells[r][c] = (r === 0 || r === rows - 1 || c === 0 || c === cols - 1) ? 'pin' : 'empty';
+            }
+          }
+          renderMatrixGrid();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('gridPresetFillBtn').addEventListener('click', () => {
+          const { cols, rows } = appState.grid;
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              appState.grid.cells[r][c] = 'pin';
+            }
+          }
+          renderMatrixGrid();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('gridPresetClearBtn').addEventListener('click', () => {
+          const { cols, rows } = appState.grid;
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              appState.grid.cells[r][c] = 'empty';
+            }
+          }
+          renderMatrixGrid();
+          rebuildSceneGeometry();
+        });
+
+        // Calibración de impresora 3D
+        document.getElementById('thicknessSlider').addEventListener('input', (e) => {
+          appState.thickness = parseFloat(e.target.value);
+          syncAllUI();
+          rebuildSceneGeometry();
+        });
+
+        document.querySelectorAll('.thick-preset-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            appState.thickness = parseFloat(btn.dataset.thickness);
+            syncAllUI();
+            rebuildSceneGeometry();
+          });
+        });
+
+        document.getElementById('pinClearanceSlider').addEventListener('input', (e) => {
+          appState.pinClearance = parseFloat(e.target.value);
+          syncAllUI();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('axleClearanceSlider').addEventListener('input', (e) => {
+          appState.axleClearance = parseFloat(e.target.value);
+          syncAllUI();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('elephantChamferSlider').addEventListener('input', (e) => {
+          appState.elephantChamfer = parseFloat(e.target.value);
+          syncAllUI();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('bottomChamfer45Btn').addEventListener('click', () => {
+          appState.bottomType = 'chamfer45';
+          syncAllUI();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('bottomFlatBtn').addEventListener('click', () => {
+          appState.bottomType = 'flat';
+          syncAllUI();
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('resetCalibrationBtn').addEventListener('click', () => {
+          appState.thickness = 7.8;
+          appState.pinClearance = 0.15;
+          appState.axleClearance = 0.15;
+          appState.elephantChamfer = 0.35;
+          appState.bottomType = 'chamfer45';
+          syncAllUI();
+          rebuildSceneGeometry();
+          showToast('Calibración restaurada', 'Valores óptimos PLA/PETG (holgura +0.15 mm, chaflán 45°).');
+        });
+
+        // Controles de Cámara y Visualización 3D
+        document.querySelectorAll('.cam-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('.cam-btn').forEach((b) => {
+              b.className = 'cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-slate-300 hover:bg-slate-800 cursor-pointer';
+            });
+            btn.className = 'cam-btn px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-orange-500 text-white cursor-pointer';
+            setCameraPreset(btn.dataset.cam);
+          });
+        });
+
+        document.getElementById('toggleWireframeBtn').addEventListener('click', (e) => {
+          appState.wireframe = !appState.wireframe;
+          e.target.className = appState.wireframe
+            ? 'px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/40 cursor-pointer'
+            : 'px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-900 text-slate-300 border border-slate-700 hover:border-slate-500 transition cursor-pointer';
+          rebuildSceneGeometry();
+        });
+
+        document.getElementById('toggleXrayBtn').addEventListener('click', (e) => {
+          appState.xray = !appState.xray;
+          e.target.className = appState.xray
+            ? 'px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/40 cursor-pointer'
+            : 'px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-900 text-slate-300 border border-slate-700 hover:border-slate-500 transition cursor-pointer';
+          rebuildSceneGeometry();
+        });
+
+        document.querySelectorAll('.swatch-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            appState.filamentColor = btn.dataset.color;
+            document.querySelectorAll('.swatch-btn').forEach((b) => {
+              b.classList.remove('border-2', 'border-white', 'scale-110');
+              b.classList.add('border', 'border-slate-600');
+            });
+            btn.classList.remove('border', 'border-slate-600');
+            btn.classList.add('border-2', 'border-white', 'scale-110');
+            rebuildSceneGeometry();
+          });
+        });
+      }
+
+      // =========================================================================
+      // ARRANQUE DE LA APLICACIÓN AL CARGAR LA VENTANA
+      // =========================================================================
+      window.addEventListener('load', () => {
+        initThreeViewport();
+        bindEvents();
+        applyTemplate('l_offset_half');
+        setCameraPreset('iso');
+      });
+    })();
+  </script>
+</body>
+</html>
